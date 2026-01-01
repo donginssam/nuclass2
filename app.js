@@ -9,7 +9,6 @@ let movedStudents = new Set();    // 이동된 학생 표시용
 
 // 현재 로그인 정보
 let currentSession = {
-    schoolCode: null,
     schoolName: null,
     grade: null,
     isLoggedIn: false
@@ -87,7 +86,6 @@ function saveSession() {
 
 function clearSession() {
     currentSession = {
-        schoolCode: null,
         schoolName: null,
         grade: null,
         isLoggedIn: false
@@ -101,14 +99,14 @@ function clearSession() {
 async function handleLogin(event) {
     event.preventDefault();
     
-    const schoolCode = document.getElementById('schoolCodeInput').value.trim();
+    const schoolName = document.getElementById('schoolNameInput').value.trim();
     const grade = document.getElementById('gradeInput').value.trim();
     const password = document.getElementById('passwordInput').value.trim();
     const messageDiv = document.getElementById('loginMessage');
     
     // 입력 검증
-    if (!schoolCode || !grade || !password) {
-        messageDiv.textContent = '학교코드, 학년, 비밀번호를 모두 입력해주세요.';
+    if (!schoolName || !grade || !password) {
+        messageDiv.textContent = '학교이름, 학년, 비밀번호를 모두 입력해주세요.';
         return;
     }
     
@@ -117,56 +115,34 @@ async function handleLogin(event) {
         return;
     }
     
-    try {
-        // NEIS API로 학교명 확인
-        const apiUrl = `https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=1&KEY=11208a28a1574d868608e12816c43830&SD_SCHUL_CODE=${schoolCode}`;
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-        
-        if (!data.schoolInfo || !data.schoolInfo[1]?.row[0]) {
-            messageDiv.textContent = '유효한 학교코드가 아닙니다.';
-            return;
-        }
-        
-        const schoolName = data.schoolInfo[1].row[0].SCHUL_NM;
-        
-        // 학교 확인
-        if (!confirm(`학교명: ${schoolName}\n\n이 학교가 맞습니까?`)) {
-            return;
-        }
-        
-        // 비밀번호 확인 (localStorage)
-        const storageKey = `nuclass_pwd_${schoolCode}_${grade}`;
-        const savedPassword = localStorage.getItem(storageKey);
-        
-        if (savedPassword === null) {
-            // 최초 로그인: 비밀번호 등록
-            localStorage.setItem(storageKey, password);
-            messageDiv.style.color = '#4CAF50';
-            messageDiv.textContent = '비밀번호가 등록되었습니다!';
-        } else if (savedPassword !== password) {
-            // 비밀번호 불일치
-            messageDiv.style.color = '#e53935';
-            messageDiv.textContent = '비밀번호가 일치하지 않습니다.';
-            return;
-        }
-        
-        // 로그인 성공
-        currentSession = {
-            schoolCode: schoolCode,
-            schoolName: schoolName,
-            grade: grade,
-            isLoggedIn: true
-        };
-        saveSession();
-        loadClassData();
-        showDashboardScreen();
-        
-    } catch (error) {
-        console.error('로그인 오류:', error);
-        messageDiv.textContent = '로그인 중 오류가 발생했습니다.';
+    // 비밀번호 확인 (localStorage)
+    // 학교이름과 학년을 조합해서 고유 키 생성
+    const storageKey = `nuclass_pwd_${schoolName}_${grade}`;
+    const savedPassword = localStorage.getItem(storageKey);
+    
+    if (savedPassword === null) {
+        // 최초 로그인: 비밀번호 등록
+        localStorage.setItem(storageKey, password);
+        messageDiv.style.color = '#4CAF50';
+        messageDiv.textContent = '비밀번호가 등록되었습니다!';
+    } else if (savedPassword !== password) {
+        // 비밀번호 불일치
+        messageDiv.style.color = '#e53935';
+        messageDiv.textContent = '비밀번호가 일치하지 않습니다.';
+        return;
     }
+    
+    // 로그인 성공
+    currentSession = {
+        schoolName: schoolName,
+        grade: grade,
+        isLoggedIn: true
+    };
+    saveSession();
+    loadClassData();
+    showDashboardScreen();
 }
+
 
 function handleLogout() {
     if (!confirm('정말 로그아웃 하시겠습니까?')) return;
@@ -179,7 +155,7 @@ function handleLogout() {
     movedStudents.clear();
     
     // 입력 필드 초기화
-    document.getElementById('schoolCodeInput').value = '';
+    document.getElementById('schoolNameInput').value = '';
     document.getElementById('gradeInput').value = '';
     document.getElementById('passwordInput').value = '';
     document.getElementById('loginMessage').textContent = '';
@@ -191,8 +167,9 @@ function handleLogout() {
    데이터 저장/불러오기 (localStorage)
    ======================================== */
 function getDataKey() {
-    return `nuclass_data_${currentSession.schoolCode}_${currentSession.grade}`;
+    return `nuclass_data_${currentSession.schoolName}_${currentSession.grade}`;
 }
+
 
 function saveClassData() {
     const dataToSave = {
