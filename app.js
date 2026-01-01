@@ -1,0 +1,933 @@
+/* ========================================
+   전역 변수
+   ======================================== */
+let classData = {};          // 반별 학생 데이터
+let selectedStudents = [];   // 선택된 학생 목록
+let history = [];            // 변경 이력
+let changedStudents = new Set();  // 교환된 학생 표시용
+let movedStudents = new Set();    // 이동된 학생 표시용
+
+// 현재 로그인 정보
+let currentSession = {
+    schoolCode: null,
+    schoolName: null,
+    grade: null,
+    isLoggedIn: false
+};
+
+// PDF.js 워커 설정
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ========================================
+   초기화
+   ======================================== */
+document.addEventListener('DOMContentLoaded', function() {
+    // 저장된 세션 확인
+    loadSession();
+    
+    // 이벤트 리스너 등록
+    initEventListeners();
+});
+
+function initEventListeners() {
+    // 로그인 폼
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    
+    // 로그아웃
+    document.getElementById('logoutButton').addEventListener('click', handleLogout);
+    
+    // PDF 업로드
+    document.getElementById('pdfUpload').addEventListener('change', handlePdfUpload);
+    
+    // 버튼들
+    document.getElementById('globalSwapButton').addEventListener('click', swapStudents);
+    document.getElementById('globalMoveButton').addEventListener('click', moveStudents);
+    document.getElementById('sortByNameButton').addEventListener('click', sortByName);
+    document.getElementById('resetDataButton').addEventListener('click', resetData);
+    document.getElementById('downloadPdfButton').addEventListener('click', downloadPdf);
+    document.getElementById('downloadExcelButton').addEventListener('click', downloadExcel);
+}
+
+/* ========================================
+   화면 전환
+   ======================================== */
+function showLoginScreen() {
+    document.getElementById('loginScreen').style.display = 'block';
+    document.getElementById('dashboardScreen').style.display = 'none';
+}
+
+function showDashboardScreen() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('dashboardScreen').style.display = 'block';
+    
+    // 학교 정보 표시
+    document.getElementById('schoolInfoText').textContent = 
+        `${currentSession.schoolName} - ${currentSession.grade}`;
+}
+
+/* ========================================
+   세션 관리 (localStorage)
+   ======================================== */
+function loadSession() {
+    const saved = localStorage.getItem('nuclass_session');
+    if (saved) {
+        currentSession = JSON.parse(saved);
+        if (currentSession.isLoggedIn) {
+            loadClassData();
+            showDashboardScreen();
+            return;
+        }
+    }
+    showLoginScreen();
+}
+
+function saveSession() {
+    localStorage.setItem('nuclass_session', JSON.stringify(currentSession));
+}
+
+function clearSession() {
+    currentSession = {
+        schoolCode: null,
+        schoolName: null,
+        grade: null,
+        isLoggedIn: false
+    };
+    localStorage.removeItem('nuclass_session');
+}
+
+/* ========================================
+   로그인 처리
+   ======================================== */
+async function handleLogin(event) {
+    event.preventDefault();
+    
+    const schoolCode = document.getElementById('schoolCodeInput').value.trim();
+    const grade = document.getElementById('gradeInput').value.trim();
+    const password = document.getElementById('passwordInput').value.trim();
+    const messageDiv = document.getElementById('loginMessage');
+    
+    // 입력 검증
+    if (!schoolCode || !grade || !password) {
+        messageDiv.textContent = '학교코드, 학년, 비밀번호를 모두 입력해주세요.';
+        return;
+    }
+    
+    if (!/^\d{5}$/.test(password)) {
+        messageDiv.textContent = '비밀번호는 숫자 5자리여야 합니다.';
+        return;
+    }
+    
+    try {
+        // NEIS API로 학교명 확인
+        const apiUrl = `https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=1&KEY=11208a28a1574d868608e12816c43830&SD_SCHUL_CODE=${schoolCode}`;
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        
+        if (!data.schoolInfo || !data.schoolInfo[1]?.row[0]) {
+            messageDiv.textContent = '유효한 학교코드가 아닙니다.';
+            return;
+        }
+        
+        const schoolName = data.schoolInfo[1].row[0].SCHUL_NM;
+        
+        // 학교 확인
+        if (!confirm(`학교명: ${schoolName}\n\n이 학교가 맞습니까?`)) {
+            return;
+        }
+        
+        // 비밀번호 확인 (localStorage)
+        const storageKey = `nuclass_pwd_${schoolCode}_${grade}`;
+        const savedPassword = localStorage.getItem(storageKey);
+        
+        if (savedPassword === null) {
+            // 최초 로그인: 비밀번호 등록
+            localStorage.setItem(storageKey, password);
+            messageDiv.style.color = '#4CAF50';
+            messageDiv.textContent = '비밀번호가 등록되었습니다!';
+        } else if (savedPassword !== password) {
+            // 비밀번호 불일치
+            messageDiv.style.color = '#e53935';
+            messageDiv.textContent = '비밀번호가 일치하지 않습니다.';
+            return;
+        }
+        
+        // 로그인 성공
+        currentSession = {
+            schoolCode: schoolCode,
+            schoolName: schoolName,
+            grade: grade,
+            isLoggedIn: true
+        };
+        saveSession();
+        loadClassData();
+        showDashboardScreen();
+        
+    } catch (error) {
+        console.error('로그인 오류:', error);
+        messageDiv.textContent = '로그인 중 오류가 발생했습니다.';
+    }
+}
+
+function handleLogout() {
+    if (!confirm('정말 로그아웃 하시겠습니까?')) return;
+    
+    clearSession();
+    classData = {};
+    selectedStudents = [];
+    history = [];
+    changedStudents.clear();
+    movedStudents.clear();
+    
+    // 입력 필드 초기화
+    document.getElementById('schoolCodeInput').value = '';
+    document.getElementById('gradeInput').value = '';
+    document.getElementById('passwordInput').value = '';
+    document.getElementById('loginMessage').textContent = '';
+    
+    showLoginScreen();
+}
+
+/* ========================================
+   데이터 저장/불러오기 (localStorage)
+   ======================================== */
+function getDataKey() {
+    return `nuclass_data_${currentSession.schoolCode}_${currentSession.grade}`;
+}
+
+function saveClassData() {
+    const dataToSave = {
+        classData: classData,
+        history: history
+    };
+    localStorage.setItem(getDataKey(), JSON.stringify(dataToSave));
+}
+
+function loadClassData() {
+    const saved = localStorage.getItem(getDataKey());
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        classData = parsed.classData || {};
+        history = parsed.history || [];
+    } else {
+        classData = {};
+        history = [];
+    }
+    renderClasses();
+    renderHistory();
+}
+
+/* ========================================
+   PDF 파싱 (PDF.js)
+   ======================================== */
+async function handlePdfUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf') {
+        alert('PDF 파일만 업로드 가능합니다.');
+        return;
+    }
+    
+    // 로딩 표시
+    const container = document.getElementById('classesContainer');
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>PDF 파일을 분석 중입니다...</p>
+        </div>
+    `;
+    
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        
+        let allText = '';
+        
+        // 모든 페이지에서 텍스트 추출
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            allText += pageText + '\n';
+        }
+        
+        // 텍스트 파싱하여 학생 데이터 추출
+        classData = parsePdfText(allText);
+        history = [];
+        changedStudents.clear();
+        movedStudents.clear();
+        
+        saveClassData();
+        renderClasses();
+        renderHistory();
+        
+        alert('PDF 업로드 및 분석이 완료되었습니다!');
+        
+    } catch (error) {
+        console.error('PDF 파싱 오류:', error);
+        alert('PDF 파일 처리 중 오류가 발생했습니다.');
+        renderClasses();
+    }
+    
+    // 파일 입력 초기화 (같은 파일 다시 선택 가능하도록)
+    event.target.value = '';
+}
+
+function parsePdfText(text) {
+    const classes = {};
+    const lines = text.split(/\s+/);
+    
+    // 숫자만 추출하는 함수
+    function extractNumber(value) {
+        const match = String(value).match(/^\d+/);
+        return match ? match[0] : '';
+    }
+    
+    // 토큰을 순회하며 학생 데이터 추출
+    // 예상 패턴: 학년 반 번호 성명 생년월일 성별 기준성적 이전학년 이전반 이전번호
+    let i = 0;
+    while (i < lines.length) {
+        const token = lines[i];
+        
+        // "N학년" 패턴 찾기
+        if (/^\d+학년$/.test(token)) {
+            const grade = extractNumber(token);
+            const cls = lines[i + 1];
+            const num = lines[i + 2];
+            const name = lines[i + 3];
+            const dob = lines[i + 4];
+            const gender = lines[i + 5];
+            const score = lines[i + 6];
+            
+            // 이전학적 정보
+            const prevGrade = extractNumber(lines[i + 7] || '');
+            const prevClass = extractNumber(lines[i + 8] || '');
+            const prevNum = extractNumber(lines[i + 9] || '');
+            
+            // 유효성 검사
+            if (grade && cls && num && name && /^\d+$/.test(num)) {
+                const classKey = `${grade}-${cls}`;
+                
+                if (!classes[classKey]) {
+                    classes[classKey] = [];
+                }
+                
+                classes[classKey].push({
+                    번호: num,
+                    성명: name,
+                    생년월일: dob || '',
+                    성별: gender || '',
+                    기준성적: score || '',
+                    이전학적: `${prevGrade} ${prevClass} ${prevNum}`.trim(),
+                    이전학적학년: prevGrade,
+                    이전학적반: prevClass,
+                    이전학적번호: prevNum
+                });
+                
+                i += 10; // 다음 학생으로
+                continue;
+            }
+        }
+        i++;
+    }
+    
+    return classes;
+}
+
+/* ========================================
+   렌더링: 반 목록
+   ======================================== */
+function renderClasses() {
+    const container = document.getElementById('classesContainer');
+    container.innerHTML = '';
+    
+    const validClasses = Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+    
+    if (validClasses.length === 0) {
+        container.innerHTML = `
+            <div class="empty-message" style="grid-column: 1 / -1;">
+                <div class="icon">📄</div>
+                <p>데이터가 없습니다.</p>
+                <p>PDF 파일을 업로드해주세요.</p>
+            </div>
+        `;
+        renderStatistics();
+        return;
+    }
+    
+    // 반 정렬 (학년-반 순)
+    validClasses.sort((a, b) => {
+        const [gradeA, classA] = a.split('-').map(Number);
+        const [gradeB, classB] = b.split('-').map(Number);
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    });
+    
+    validClasses.forEach(cls => {
+        const [grade, classNumber] = cls.split('-');
+        const students = classData[cls];
+        
+        const classBox = document.createElement('div');
+        classBox.className = 'class-box';
+        
+        // 반 제목
+        const title = document.createElement('h3');
+        title.textContent = `${classNumber}반`;
+        classBox.appendChild(title);
+        
+        // 학생 테이블
+        const table = document.createElement('table');
+        table.className = 'student-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th rowspan="2">번호</th>
+                    <th rowspan="2">성명</th>
+                    <th rowspan="2">생년월일</th>
+                    <th rowspan="2">성별</th>
+                    <th rowspan="2">기준성적</th>
+                    <th colspan="3">이전학적</th>
+                </tr>
+                <tr>
+                    <th>학년</th>
+                    <th>반</th>
+                    <th>번호</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        
+        const tbody = table.querySelector('tbody');
+        
+        students.forEach((student, index) => {
+            const row = document.createElement('tr');
+            row.className = 'student-row';
+            row.dataset.class = cls;
+            row.dataset.index = index;
+            
+            // 이전학적 정보
+            const prevClass = student.이전학적반 || '';
+            
+            // 이전반 배경색 클래스
+            const prevClassBgClass = prevClass ? `prev-class-${prevClass}` : '';
+            
+            row.innerHTML = `
+                <td>${student.번호}</td>
+                <td>${student.성명}</td>
+                <td>${student.생년월일}</td>
+                <td>${student.성별}</td>
+                <td>${student.기준성적}</td>
+                <td>${student.이전학적학년 || ''}</td>
+                <td class="${prevClassBgClass}" style="font-weight: bold;">${prevClass}</td>
+                <td>${student.이전학적번호 || ''}</td>
+            `;
+            
+            // 상태 표시
+            if (changedStudents.has(`${cls}-${student.성명}`)) {
+                row.classList.add('changed');
+            } else if (movedStudents.has(`${cls}-${student.성명}`)) {
+                row.classList.add('moved');
+            }
+            
+            // 클릭 이벤트
+            row.addEventListener('click', () => selectStudent(cls, index, row));
+            
+            tbody.appendChild(row);
+        });
+        
+        classBox.appendChild(table);
+        
+        // 반 내 버튼
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'class-buttons';
+        buttonsDiv.innerHTML = `
+            <button class="btn btn-green btn-swap" disabled>바꾸기</button>
+            <button class="btn btn-purple btn-move" disabled>다른 반으로 이동</button>
+        `;
+        
+        buttonsDiv.querySelector('.btn-swap').addEventListener('click', swapStudents);
+        buttonsDiv.querySelector('.btn-move').addEventListener('click', moveStudents);
+        
+        classBox.appendChild(buttonsDiv);
+        container.appendChild(classBox);
+    });
+    
+    updateButtonState();
+    renderStatistics();
+}
+
+/* ========================================
+   렌더링: 통계 테이블
+   ======================================== */
+function renderStatistics() {
+    const thead = document.querySelector('#currentStats thead');
+    const tbody = document.querySelector('#currentStats tbody');
+    
+    const validClasses = Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+    
+    if (validClasses.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:20px;">데이터가 없습니다.</td></tr>';
+        return;
+    }
+    
+    const numClasses = validClasses.length;
+    
+    // 헤더 생성
+    let headerHTML = `
+        <tr>
+            <th>구분</th>
+            <th>합계</th>
+    `;
+    for (let i = 1; i <= numClasses; i++) {
+        headerHTML += `<th>이전 ${i}반</th>`;
+    }
+    headerHTML += `
+            <th>기준성적 평균</th>
+            <th>최고점(이름)</th>
+            <th>최저점(이름)</th>
+        </tr>
+    `;
+    thead.innerHTML = headerHTML;
+    
+    // 통계 계산
+    const classStats = {};
+    
+    validClasses.forEach(cls => {
+        const students = classData[cls];
+        let totalScore = 0;
+        let maxScore = -Infinity;
+        let minScore = Infinity;
+        let maxStudent = '';
+        let minStudent = '';
+        const previousClassCount = Array(numClasses).fill(0);
+        
+        students.forEach(student => {
+            const score = parseFloat(student.기준성적) || 0;
+            
+            if (score > maxScore) {
+                maxScore = score;
+                maxStudent = student.성명;
+            }
+            if (score < minScore) {
+                minScore = score;
+                minStudent = student.성명;
+            }
+            totalScore += score;
+            
+            // 이전반 통계
+            const prevClass = parseInt(student.이전학적반) - 1;
+            if (prevClass >= 0 && prevClass < numClasses) {
+                previousClassCount[prevClass]++;
+            }
+        });
+        
+        classStats[cls] = {
+            studentCount: students.length,
+            avgScore: students.length ? (totalScore / students.length).toFixed(2) : '-',
+            maxScore: maxScore !== -Infinity ? maxScore : '-',
+            maxStudent,
+            minScore: minScore !== Infinity ? minScore : '-',
+            minStudent,
+            previousClassCount
+        };
+    });
+    
+    // 본문 생성
+    tbody.innerHTML = '';
+    
+    validClasses.sort((a, b) => {
+        const [gradeA, classA] = a.split('-').map(Number);
+        const [gradeB, classB] = b.split('-').map(Number);
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    }).forEach(cls => {
+        const stats = classStats[cls];
+        const row = document.createElement('tr');
+        
+        const maxCount = Math.max(...stats.previousClassCount);
+        const minCount = Math.min(...stats.previousClassCount);
+        
+        let rowHTML = `
+            <td>${cls}</td>
+            <td>${stats.studentCount}</td>
+        `;
+        
+        stats.previousClassCount.forEach(count => {
+            let style = '';
+            if (count === maxCount && stats.previousClassCount.filter(c => c === maxCount).length === 1) {
+                style = 'background-color: #ffcccc;';
+            } else if (count === minCount && stats.previousClassCount.filter(c => c === minCount).length === 1) {
+                style = 'background-color: #cce5ff;';
+            }
+            rowHTML += `<td style="${style}">${count}</td>`;
+        });
+        
+        rowHTML += `
+            <td>${stats.avgScore}</td>
+            <td>${stats.maxScore !== '-' ? `${stats.maxScore} (${stats.maxStudent})` : '-'}</td>
+            <td>${stats.minScore !== '-' ? `${stats.minScore} (${stats.minStudent})` : '-'}</td>
+        `;
+        
+        row.innerHTML = rowHTML;
+        tbody.appendChild(row);
+    });
+}
+
+/* ========================================
+   학생 선택
+   ======================================== */
+function selectStudent(cls, index, element) {
+    const selectedIndex = selectedStudents.findIndex(
+        s => s.cls === cls && s.index === index
+    );
+    
+    if (selectedIndex !== -1) {
+        // 이미 선택됨 → 해제
+        selectedStudents.splice(selectedIndex, 1);
+        element.classList.remove('selected');
+    } else {
+        // 새로 선택
+        selectedStudents.push({ cls, index });
+        element.classList.add('selected');
+    }
+    
+    updateButtonState();
+}
+
+function updateButtonState() {
+    // 전역 버튼
+    const globalSwapBtn = document.getElementById('globalSwapButton');
+    const globalMoveBtn = document.getElementById('globalMoveButton');
+    
+    globalSwapBtn.disabled = selectedStudents.length !== 2;
+    globalMoveBtn.disabled = selectedStudents.length === 0;
+    
+    // 반 내 버튼들
+    document.querySelectorAll('.btn-swap').forEach(btn => {
+        btn.disabled = selectedStudents.length !== 2;
+    });
+    document.querySelectorAll('.btn-move').forEach(btn => {
+        btn.disabled = selectedStudents.length === 0;
+    });
+}
+
+/* ========================================
+   학생 바꾸기
+   ======================================== */
+function swapStudents() {
+    if (selectedStudents.length !== 2) {
+        alert('두 명의 학생을 선택해야 합니다.');
+        return;
+    }
+    
+    const [first, second] = selectedStudents;
+    
+    // 같은 반 확인
+    if (first.cls === second.cls) {
+        if (!confirm('같은 반 학생 2명을 선택했습니다. 그래도 바꾸시겠습니까?')) {
+            selectedStudents = [];
+            renderClasses();
+            return;
+        }
+    }
+    
+    // 교환
+    const temp = classData[first.cls][first.index];
+    classData[first.cls][first.index] = classData[second.cls][second.index];
+    classData[second.cls][second.index] = temp;
+    
+    // 상태 표시
+    changedStudents.add(`${first.cls}-${classData[first.cls][first.index].성명}`);
+    changedStudents.add(`${second.cls}-${classData[second.cls][second.index].성명}`);
+    
+    // 이력 추가
+    const [, fromClass1] = first.cls.split('-');
+    const [, fromClass2] = second.cls.split('-');
+    history.push(`(바꿈) ${fromClass1}반 ${temp.성명} ⇔ ${fromClass2}반 ${classData[first.cls][first.index].성명}`);
+    
+    // 저장 및 렌더링
+    saveClassData();
+    selectedStudents = [];
+    renderClasses();
+    renderHistory();
+}
+
+/* ========================================
+   학생 이동
+   ======================================== */
+function moveStudents() {
+    if (selectedStudents.length === 0) {
+        alert('이동할 학생을 선택하세요.');
+        return;
+    }
+    
+    // 현재 학년 추출
+    const firstClass = selectedStudents[0].cls;
+    const currentGrade = firstClass.split('-')[0];
+    
+    const targetClassInput = prompt('어느 반으로 이동하시겠습니까? (반 숫자만 입력, 예: 1)');
+    
+    if (!targetClassInput || isNaN(targetClassInput)) {
+        alert('유효한 반 숫자를 입력하세요.');
+        return;
+    }
+    
+    const targetClass = `${currentGrade}-${targetClassInput}`;
+    
+    if (!classData[targetClass]) {
+        alert(`${currentGrade}학년 ${targetClassInput}반은 유효하지 않습니다.`);
+        return;
+    }
+    
+    // 이동할 학생들 추출
+    const movingStudents = [];
+    
+    // 인덱스 내림차순 정렬 (삭제 시 인덱스 꼬임 방지)
+    const sortedSelected = [...selectedStudents].sort((a, b) => b.index - a.index);
+    
+    sortedSelected.forEach(({ cls, index }) => {
+        const student = classData[cls][index];
+        if (student) {
+            movingStudents.push({
+                ...student,
+                fromClass: cls,
+                toClass: targetClass
+            });
+            // 원래 반에서 제거
+            classData[cls].splice(index, 1);
+        }
+    });
+    
+    // 새 반에 추가
+    movingStudents.forEach(student => {
+        classData[targetClass].push(student);
+        movedStudents.add(`${targetClass}-${student.성명}`);
+        
+        // 이력 추가
+        const [, fromClassNum] = student.fromClass.split('-');
+        const [, toClassNum] = student.toClass.split('-');
+        history.push(`(이동) ${fromClassNum}반 ${student.성명} → ${toClassNum}반`);
+    });
+    
+    // 저장 및 렌더링
+    saveClassData();
+    selectedStudents = [];
+    renderClasses();
+    renderHistory();
+    
+    alert('학생 이동이 완료되었습니다.');
+}
+
+/* ========================================
+   이름순 정렬
+   ======================================== */
+function sortByName() {
+    if (!confirm('학생 이름을 기준으로 오름차순 정렬하시겠습니까?\n번호도 다시 1번부터 재부여됩니다.')) {
+        return;
+    }
+    
+    Object.keys(classData).forEach(cls => {
+        if (cls === 'history') return;
+        
+        classData[cls].sort((a, b) => a.성명.localeCompare(b.성명, 'ko'));
+        classData[cls].forEach((student, index) => {
+            student.번호 = String(index + 1);
+        });
+    });
+    
+    saveClassData();
+    renderClasses();
+    alert('이름 기준 오름차순 정렬이 완료되었습니다.');
+}
+
+/* ========================================
+   데이터 초기화
+   ======================================== */
+function resetData() {
+    if (!confirm('현재 학년 데이터를 초기화하시겠습니까?\n되돌릴 수 없습니다.')) {
+        return;
+    }
+    
+    classData = {};
+    history = [];
+    changedStudents.clear();
+    movedStudents.clear();
+    selectedStudents = [];
+    
+    localStorage.removeItem(getDataKey());
+    
+    renderClasses();
+    renderHistory();
+    alert('데이터가 초기화되었습니다.');
+}
+
+/* ========================================
+   변경 이력 렌더링
+   ======================================== */
+function renderHistory() {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    
+    history.forEach(entry => {
+        const li = document.createElement('li');
+        li.textContent = entry;
+        list.appendChild(li);
+    });
+}
+
+/* ========================================
+   PDF 다운로드 (jsPDF)
+   ======================================== */
+function downloadPdf() {
+    const validClasses = Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+    
+    if (validClasses.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+    }
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    const now = new Date().toLocaleString('ko-KR');
+    const year = new Date().getFullYear();
+    
+    // 제목
+    doc.setFontSize(14);
+    doc.text(`${currentSession.schoolName} ${currentSession.grade} NU:CLASS 반편성내역`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`(${now})`, 14, 22);
+    
+    let yPos = 30;
+    
+    // 반별 테이블
+    validClasses.sort((a, b) => {
+        const [gradeA, classA] = a.split('-').map(Number);
+        const [gradeB, classB] = b.split('-').map(Number);
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    }).forEach((cls, idx) => {
+        const [grade, classNum] = cls.split('-');
+        const students = classData[cls];
+        
+        if (idx > 0) {
+            doc.addPage();
+            yPos = 15;
+        }
+        
+        doc.setFontSize(12);
+        doc.text(`${year}학년도 ${currentSession.grade} ${classNum}반`, 14, yPos);
+        yPos += 5;
+        
+        const tableData = students.map(s => [
+            grade,
+            classNum,
+            s.번호,
+            s.성명,
+            s.생년월일,
+            s.성별,
+            s.기준성적,
+            s.이전학적학년 || '',
+            s.이전학적반 || '',
+            s.이전학적번호 || ''
+        ]);
+        
+        doc.autoTable({
+            startY: yPos,
+            head: [['학년', '반', '번호', '성명', '생년월일', '성별', '기준성적', '이전학년', '이전반', '이전번호']],
+            body: tableData,
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [76, 175, 80] }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+    });
+    
+    // 변경 이력
+    if (history.length > 0) {
+        doc.addPage();
+        doc.setFontSize(12);
+        doc.text('변경 이력', 14, 15);
+        
+        let historyY = 25;
+        doc.setFontSize(9);
+        history.forEach(entry => {
+            if (historyY > 280) {
+                doc.addPage();
+                historyY = 15;
+            }
+            doc.text(`- ${entry}`, 14, historyY);
+            historyY += 6;
+        });
+    }
+    
+    doc.save(`${currentSession.schoolName}_${currentSession.grade}_반편성결과.pdf`);
+}
+
+/* ========================================
+   엑셀 다운로드 (SheetJS)
+   ======================================== */
+function downloadExcel() {
+    const validClasses = Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+    
+    if (validClasses.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+    }
+    
+    const allData = [];
+    
+    validClasses.sort((a, b) => {
+        const [gradeA, classA] = a.split('-').map(Number);
+        const [gradeB, classB] = b.split('-').map(Number);
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    }).forEach(cls => {
+        const [grade, classNum] = cls.split('-');
+        const students = classData[cls];
+        
+        students.forEach(student => {
+            allData.push({
+                '학번': Number(grade) * 1000 + Number(classNum) * 100 + Number(student.번호),
+                '성명': student.성명,
+                '이전주야과정구분': '주간',
+                '이전학년': student.이전학적학년 ? `${student.이전학적학년}학년` : '',
+                '이전반': String(student.이전학적반 || '').padStart(2, '0'),
+                '이전번호': student.이전학적번호 || '',
+                '진급주야과정구분': '주간',
+                '진급학년': `${grade}학년`,
+                '진급반코드': String(classNum).padStart(2, '0'),
+                '진급반번호': student.번호
+            });
+        });
+    });
+    
+    const ws = XLSX.utils.json_to_sheet(allData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${currentSession.schoolName}_${currentSession.grade}`);
+    
+    // 열 너비 설정
+    ws['!cols'] = [
+        { wch: 10 }, // 학번
+        { wch: 12 }, // 성명
+        { wch: 15 }, // 이전주야과정구분
+        { wch: 10 }, // 이전학년
+        { wch: 8 },  // 이전반
+        { wch: 10 }, // 이전번호
+        { wch: 15 }, // 진급주야과정구분
+        { wch: 10 }, // 진급학년
+        { wch: 10 }, // 진급반코드
+        { wch: 10 }  // 진급반번호
+    ];
+    
+    XLSX.writeFile(wb, `${currentSession.schoolName}_${currentSession.grade}_반편성결과.xlsx`);
+}
