@@ -104,6 +104,7 @@ function initEventListeners() {
     document.getElementById('sortByNameButton').addEventListener('click', sortByName);
     document.getElementById('resetDataButton').addEventListener('click', resetData);
     document.getElementById('downloadPdfButton').addEventListener('click', downloadPdf);
+    document.getElementById('downloadPdfPublicButton').addEventListener('click', downloadPdfPublic);
     document.getElementById('downloadExcelButton').addEventListener('click', downloadExcel);
     
     // 백업/복원
@@ -652,6 +653,7 @@ function renderClasses() {
     const hasData = validClasses.length > 0;
     document.getElementById('sortByNameButton').disabled = !hasData;
     document.getElementById('downloadPdfButton').disabled = !hasData;
+    document.getElementById('downloadPdfPublicButton').disabled = !hasData;
     document.getElementById('downloadExcelButton').disabled = !hasData;
     document.getElementById('backupButton').disabled = !hasData;
     document.getElementById('resetDataButton').disabled = !hasData;
@@ -797,7 +799,7 @@ function renderClasses() {
 
     // 학생 테이블이 다시 그려진 뒤, 열 숨김/표시 및 그리드 즉시 재적용
     applyViewOptions();
-
+    
     // 되돌리기 버튼 상태 업데이트
     updateUndoButtonState();
 }
@@ -834,9 +836,7 @@ function renderStatistics() {
     let headerHTML = `
         <tr>
             <th>구분</th>
-            <th>총원</th>
-            <th>남</th>
-            <th>여</th>
+            <th>인원</th>
     `;
     for (let i = 1; i <= prevMax; i++) {
         headerHTML += `<th>이전 ${i}반</th>`;
@@ -859,9 +859,8 @@ function renderStatistics() {
         let minScore = Infinity;
         let maxStudent = '';
         let minStudent = '';
-        let maleCount = 0;     
-        let femaleCount = 0; 
 
+        // ✅ 이전반 카운트 배열도 prevMax 길이로
         const previousClassCount = Array(prevMax).fill(0);
 
         students.forEach(student => {
@@ -877,11 +876,7 @@ function renderStatistics() {
             }
             totalScore += score;
 
-            // 성별 카운트
-            if (student.성별 === '남') maleCount++;
-            else if (student.성별 === '여') femaleCount++;
-
-            // 이전반 통계 
+            // 이전반 통계 (✅ prevMax 범위로 카운트)
             const prevClass = parseInt(student.이전학적반, 10) - 1;
             if (!isNaN(prevClass) && prevClass >= 0 && prevClass < prevMax) {
                 previousClassCount[prevClass]++;
@@ -890,8 +885,6 @@ function renderStatistics() {
 
         classStats[cls] = {
             studentCount: students.length,
-            maleCount,     
-            femaleCount,   
             avgScore: students.length ? (totalScore / students.length).toFixed(2) : '-',
             maxScore: maxScore !== -Infinity ? maxScore : '-',
             maxStudent,
@@ -919,8 +912,6 @@ function renderStatistics() {
         let rowHTML = `
             <td>${cls}</td>
             <td>${stats.studentCount}</td>
-            <td>${stats.maleCount}</td>     
-            <td>${stats.femaleCount}</td> 
         `;
 
         stats.previousClassCount.forEach(count => {
@@ -1002,7 +993,7 @@ function swapStudents() {
         }
     }
     
-    // ★ 되돌리기용 상태 저장 (작업 전에 호출!)
+    // ☆ 되돌리기용 상태 저장 (작업 전에 호출!)
     saveStateForUndo();
     
     // 교환
@@ -1053,7 +1044,7 @@ function moveStudents() {
         return;
     }
     
-    // ★ 되돌리기용 상태 저장 (작업 전에 호출!)
+    // ☆ 되돌리기용 상태 저장 (작업 전에 호출!)
     saveStateForUndo();
     
     // 이동할 학생들 추출
@@ -1220,7 +1211,7 @@ function renderHistory() {
 }
 
 /* ========================================
-   PDF 다운로드 (jsPDF)
+   PDF 다운로드 - 확인용 (jsPDF)
    ======================================== */
 
 function downloadPdf() {
@@ -1290,7 +1281,8 @@ function downloadPdf() {
 
     // -------------------------------
     // 2) 첫 페이지: 현재 현황(통계) 테이블
-    //    - 화면의 renderStatistics() 로직을 PDF에서도 재계산
+    //    - 2줄 헤더 구조로 변경
+    //    - 남/여 컬럼 추가
     // -------------------------------
     function buildStatsData() {
         // prevMax 계산 (이전학적반 최대치)
@@ -1304,10 +1296,32 @@ function downloadPdf() {
         });
         prevMax = Math.max(prevMax, 1);
 
-        // 헤더 구성
-        const head = [['구분', '총원', ...Array.from({ length: prevMax }, (_, i) => `이전${i + 1}반`), '성적 평균', '최고점(이름)', '최저점(이름)']];
+        // =============================================
+        // 2줄 헤더 구성 (jspdf-autotable 형식)
+        // =============================================
+        // 첫 번째 줄
+        const headerRow1 = [
+            { content: '구분', rowSpan: 2 },
+            { content: '인원', rowSpan: 2 },
+            { content: '남', rowSpan: 2 },
+            { content: '여', rowSpan: 2 },
+            { content: '이전 반', colSpan: prevMax },
+            { content: '성적\n평균', rowSpan: 2 },
+            { content: '최고점\n(이름)', rowSpan: 2 },
+            { content: '최저점\n(이름)', rowSpan: 2 }
+        ];
 
+        // 두 번째 줄 (이전 반 세부 컬럼)
+        const headerRow2 = [];
+        for (let i = 1; i <= prevMax; i++) {
+            headerRow2.push(`${i}반`);
+        }
+
+        const head = [headerRow1, headerRow2];
+
+        // =============================================
         // 바디 구성
+        // =============================================
         const body = [];
         sortedClasses.forEach(cls => {
             const students = classData[cls] || [];
@@ -1316,6 +1330,8 @@ function downloadPdf() {
             let minScore = Infinity;
             let maxStudent = '';
             let minStudent = '';
+            let maleCount = 0;
+            let femaleCount = 0;
 
             const previousClassCount = Array(prevMax).fill(0);
 
@@ -1332,6 +1348,13 @@ function downloadPdf() {
                 }
                 totalScore += score;
 
+                // 남/여 카운트
+                if (student.성별 === '남') {
+                    maleCount++;
+                } else if (student.성별 === '여') {
+                    femaleCount++;
+                }
+
                 const prevClass = parseInt(student.이전학적반, 10) - 1;
                 if (!isNaN(prevClass) && prevClass >= 0 && prevClass < prevMax) {
                     previousClassCount[prevClass]++;
@@ -1339,20 +1362,22 @@ function downloadPdf() {
             });
 
             const avgScore = students.length ? (totalScore / students.length).toFixed(2) : '-';
-            const maxText = maxScore !== -Infinity ? `${maxScore} (${maxStudent})` : '-';
-            const minText = minScore !== Infinity ? `${minScore} (${minStudent})` : '-';
+            const maxText = maxScore !== -Infinity ? `${maxScore}\n(${maxStudent})` : '-';
+            const minText = minScore !== Infinity ? `${minScore}\n(${minStudent})` : '-';
 
             body.push([
-                cls,
-                String(students.length),
-                ...previousClassCount.map(String),
-                String(avgScore),
-                String(maxText),
-                String(minText)
+                cls,                           // 구분
+                String(students.length),       // 인원
+                String(maleCount),             // 남
+                String(femaleCount),           // 여
+                ...previousClassCount.map(String),  // 이전 반들
+                String(avgScore),              // 성적 평균
+                maxText,                       // 최고점(이름)
+                minText                        // 최저점(이름)
             ]);
         });
 
-        return { head, body };
+        return { head, body, prevMax };
     }
 
     // 섹션 제목
@@ -1360,45 +1385,44 @@ function downloadPdf() {
     doc.text('통계', 14, yPos);
     yPos += 4;
 
-    const { head: statsHead, body: statsBody } = buildStatsData();
+    const { head: statsHead, body: statsBody, prevMax } = buildStatsData();
 
-
-    // ✅ 통계표 컬럼 폭 제어(최고/최저 넓히기)
-    const prevMax = statsHead[0].length - 5; 
-    // head 구조: [구분, 총원, 이전1..이전n, 성적 평균, 최고점(이름), 최저점(이름)]
-    // 전체길이 = 2 + prevMax + 3  => prevMax = 전체길이 - 5
-
+    // ✅ 통계표 컬럼 폭 제어
     const marginLeft = 6;
     const marginRight = 5;
     const availableWidth = pageWidth - marginLeft - marginRight;
 
-    // 컬럼 인덱스
-    const idxAvg = 2 + prevMax;
-    const idxMax = 3 + prevMax;
-    const idxMin = 4 + prevMax;
+    // 컬럼 인덱스 계산 (구분, 인원, 남, 여, 이전반들..., 성적평균, 최고점, 최저점)
+    // 총 컬럼 수 = 4 + prevMax + 3 = 7 + prevMax
+    const idxAvg = 4 + prevMax;
+    const idxMax = 5 + prevMax;
+    const idxMin = 6 + prevMax;
 
-    // 폭(mm) 배분: 최고/최저를 넓히고, 이전n반은 조금씩 줄임
-    const wCategory = 9; // 구분
-    const wTotal = 9;    // 총원
-    const wAvg = 17;      // 성적 평균
-    const wMax = 25;      // 최고점(이름)  ← 여기 넓게
-    const wMin = 25;      // 최저점(이름)  ← 여기 넓게
+    // 폭(mm) 배분
+    const wCategory = 11;  // 구분
+    const wTotal = 9;      // 인원
+    const wMale = 8;       // 남
+    const wFemale = 8;     // 여
+    const wAvg = 13;       // 성적 평균
+    const wMax = 22;       // 최고점(이름)
+    const wMin = 22;       // 최저점(이름)
 
-    const fixed = wCategory + wTotal + wAvg + wMax + wMin;
-    const wPrev = Math.max(10, Math.floor((availableWidth - fixed) / prevMax));
+    const fixed = wCategory + wTotal + wMale + wFemale + wAvg + wMax + wMin;
+    const wPrev = Math.max(9, Math.floor((availableWidth - fixed) / prevMax));
 
     const statsColumnStyles = {
-      0: { cellWidth: wCategory },
-      1: { cellWidth: wTotal },
-      [idxAvg]: { cellWidth: wAvg },
-      [idxMax]: { cellWidth: wMax },
-      [idxMin]: { cellWidth: wMin }
+        0: { cellWidth: wCategory },
+        1: { cellWidth: wTotal },
+        2: { cellWidth: wMale },
+        3: { cellWidth: wFemale },
+        [idxAvg]: { cellWidth: wAvg },
+        [idxMax]: { cellWidth: wMax },
+        [idxMin]: { cellWidth: wMin }
     };
 
     for (let i = 0; i < prevMax; i++) {
-      statsColumnStyles[2 + i] = { cellWidth: wPrev };
+        statsColumnStyles[4 + i] = { cellWidth: wPrev };
     }
-
 
     doc.autoTable({
         startY: yPos,
@@ -1411,14 +1435,18 @@ function downloadPdf() {
             textColor: [0, 0, 0],
             font: 'NotoSansKR',
             halign: 'center',
-            valign: 'middle'
+            valign: 'middle',
+            lineColor: [200, 200, 200],  // 흐미한 회색 구분선
+            lineWidth: 0.3
         },
         headStyles: {
             fontSize: 8,
             fillColor: [76, 165, 80],
             textColor: [255, 255, 255],
             halign: 'center',
-            fontStyle: 'bold'
+            fontStyle: 'bold',
+            lineColor: [200, 200, 200],  // 헤더는 하얀색 구분선
+            lineWidth: 0.3
         },
         columnStyles: statsColumnStyles
     });
@@ -1475,7 +1503,7 @@ function downloadPdf() {
         // 반 제목
         doc.setFontSize(12);
         const nextGradeNum = parseInt(currentSession.grade.replace(/[^0-9]/g, '')) + 1;
-        doc.text(`${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, classY);
+        doc.text(`${currentSession.schoolName} ${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, classY);
         classY += 7;
 
         const tableData = students.map(s => [
@@ -1500,14 +1528,33 @@ function downloadPdf() {
                 cellPadding: 2,
                 textColor: [0, 0, 0],
                 font: 'NotoSansKR',
-                halign: 'center'
+                halign: 'center',
+                lineWidth: 0  // 기본 선 제거
             },
             headStyles: {
                 fontSize: 7,
                 fillColor: [76, 165, 80],
                 textColor: [255, 255, 255],
                 halign: 'center',
-                fontStyle: 'bold'
+                fontStyle: 'bold',
+                lineColor: [200, 200, 200],
+                lineWidth: 0
+            },
+            // 내부 세로선만 그리기 (바깥 테두리 제외)
+            didDrawCell: function(data) {
+                const colCount = 10;  // 총 컬럼 수
+                // 마지막 컬럼이 아닌 경우에만 오른쪽에 세로선 그리기
+                if (data.column.index < colCount - 1) {
+                    doc.setDrawColor(200, 200, 200);  // 흐미한 회색
+                    doc.setLineWidth(0.5);
+                    // 셀 오른쪽 경계에 세로선
+                    doc.line(
+                        data.cell.x + data.cell.width,
+                        data.cell.y,
+                        data.cell.x + data.cell.width,
+                        data.cell.y + data.cell.height
+                    );
+                }
             }
         });
     });
@@ -1530,7 +1577,140 @@ function downloadPdf() {
 }
 
 
+/* ========================================
+   PDF 다운로드 - 공지용 (jsPDF)
+   - 통계, 변경 이력 제외
+   - 기준성적 제외
+   - 학년, 반, 번호, 성명, 생년월일, 성별, 이전학년, 이전반, 이전번호만 포함
+   ======================================== */
 
+function downloadPdfPublic() {
+    const validClasses = Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+
+    if (validClasses.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    try {
+        if (!window.NUCLASS_FONT_BASE64) {
+            throw new Error("NUCLASS_FONT_BASE64가 없습니다. nuclass_font.js 로딩 순서를 확인하세요.");
+        }
+        const FONT_NAME = "NotoSansKR";
+
+        doc.addFileToVFS("NotoSansKR-Regular.ttf", window.NUCLASS_FONT_BASE64);
+        doc.addFont("NotoSansKR-Regular.ttf", "NotoSansKR", "normal");
+
+        doc.addFileToVFS("NotoSansKR-Bold.ttf", window.NUCLASS_FONT_BOLD_BASE64);
+        doc.addFont("NotoSansKR-Bold.ttf", "NotoSansKR", "bold");
+
+        window.__NUCLASS_PDF_FONT_REGISTERED__ = true;
+        doc.setFont(FONT_NAME, "normal");
+    } catch (e) {
+        console.error(e);
+        alert("PDF 한글 폰트 로딩에 실패했습니다. nuclass_font.js가 정상 로딩되는지 확인하세요.");
+        return;
+    }
+
+    const year = new Date().getFullYear();
+
+    // -------------------------------
+    // 반 정렬
+    // -------------------------------
+    const sortedClasses = [...validClasses].sort((a, b) => {
+        const [gradeA, classA] = a.split('-').map(Number);
+        const [gradeB, classB] = b.split('-').map(Number);
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    });
+
+    // -------------------------------
+    // 반별 테이블만 출력 (통계/이력 없음, 기준성적 없음)
+    // -------------------------------
+    sortedClasses.forEach((cls, idx) => {
+        const [grade, classNum] = cls.split('-');
+        const students = classData[cls];
+
+        // 첫 반이 아니면 새 페이지 추가
+        if (idx > 0) {
+            doc.addPage();
+        }
+
+        let classY = 15;
+
+        // 반 제목
+        doc.setFontSize(12);
+        const nextGradeNum = parseInt(currentSession.grade.replace(/[^0-9]/g, '')) + 1;
+        doc.text(`${currentSession.schoolName} ${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, classY);
+        classY += 7;
+
+        // 테이블 데이터 (기준성적 제외!)
+        const tableData = students.map(s => [
+            grade,
+            classNum,
+            s.번호,
+            s.성명,
+            s.생년월일,
+            s.성별,
+            s.이전학적학년 || '',
+            s.이전학적반 || '',
+            s.이전학적번호 || ''
+        ]);
+
+        doc.autoTable({
+            startY: classY,
+            head: [['학년', '반', '번호', '성명', '생년월일', '성별', '이전학년', '이전반', '이전번호']],
+            body: tableData,
+            styles: {
+                fontSize: 8,
+                cellPadding: 2,
+                textColor: [0, 0, 0],
+                font: 'NotoSansKR',
+                halign: 'center',
+                lineWidth: 0
+            },
+            headStyles: {
+                fontSize: 7,
+                fillColor: [76, 165, 80],
+                textColor: [255, 255, 255],
+                halign: 'center',
+                fontStyle: 'bold',
+                lineColor: [200, 200, 200],
+                lineWidth: 0
+            },
+            didDrawCell: function(data) {
+                const colCount = 9;  // 총 컬럼 수 (기준성적 제외했으므로 9개)
+                if (data.column.index < colCount - 1) {
+                    doc.setDrawColor(200, 200, 200);
+                    doc.setLineWidth(0.5);
+                    doc.line(
+                        data.cell.x + data.cell.width,
+                        data.cell.y,
+                        data.cell.x + data.cell.width,
+                        data.cell.y + data.cell.height
+                    );
+                }
+            }
+        });
+    });
+
+    // 파일명 생성
+    const nowDate = new Date();
+    const yy = String(nowDate.getFullYear()).slice(-2);
+    const mm = String(nowDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(nowDate.getDate()).padStart(2, '0');
+    const hh = String(nowDate.getHours()).padStart(2, '0');
+    const mi = String(nowDate.getMinutes()).padStart(2, '0');
+    const ss = String(nowDate.getSeconds()).padStart(2, '0');
+    const fileTimestamp = `${yy}${mm}${dd}_${hh}${mi}${ss}`;
+
+    doc.save(`${currentSession.schoolName}_${currentSession.grade}_반편성결과_공지용_${fileTimestamp}.pdf`);
+}
 
 
 /* ========================================
