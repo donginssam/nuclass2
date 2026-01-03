@@ -311,17 +311,21 @@ async function handlePdfUpload(event) {
     // 파일 입력 초기화 (같은 파일 다시 선택 가능하도록)
     event.target.value = '';
 }
-
 function parsePdfText(text) {
     const classes = {};
     
-    // 학생 데이터 패턴 (정규식)
-    // 학년 반 번호 성명 생년월일 성별 기준성적 이전학년 이전반 이전번호
+    // 패턴 1: 일반 학생 (이전학적이 숫자로 된 경우)
     // 예: 3 1 1 따뜻이 2011.07.23 여 634.17 2 5 28
-    const studentPattern = /(\d)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d{4}\.\d{2}\.\d{2})\s+(남|여)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+    const normalPattern = /(\d)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d{4}\.\d{2}\.\d{2})\s+(남|여)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+    
+    // 패턴 2: 전입생 (이전학적이 "전입"인 경우)
+    // 예: 2 1 29 하늘이 2012.02.10 여 984.01 전입
+    const transferPattern = /(\d)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d{4}\.\d{2}\.\d{2})\s+(남|여)\s+([\d.]+)\s+전입/g;
     
     let match;
-    while ((match = studentPattern.exec(text)) !== null) {
+    
+    // 일반 학생 파싱
+    while ((match = normalPattern.exec(text)) !== null) {
         const [
             _,           // 전체 매치
             grade,       // 학년
@@ -352,6 +356,119 @@ function parsePdfText(text) {
             이전학적학년: prevGrade,
             이전학적반: prevClass,
             이전학적번호: prevNumber
+        });
+    }
+    
+    // 전입생 파싱
+    while ((match = transferPattern.exec(text)) !== null) {
+        const [
+            _,           // 전체 매치
+            grade,       // 학년
+            classNum,    // 반
+            number,      // 번호
+            name,        // 성명
+            birthDate,   // 생년월일
+            gender,      // 성별
+            score        // 기준성적
+        ] = match;
+        
+        const classKey = `${grade}-${classNum}`;
+        
+        if (!classes[classKey]) {
+            classes[classKey] = [];
+        }
+        
+        classes[classKey].push({
+            번호: number,
+            성명: name,
+            생년월일: birthDate,
+            성별: gender,
+            기준성적: score,
+            이전학적: '전입',
+            이전학적학년: grade,    // 현재 학년으로 설정
+            이전학적반: '0',        // 0으로 설정
+            이전학적번호: '0'       // 0으로 설정
+        });
+    }
+    
+    return classes;
+}function parsePdfText(text) {
+    const classes = {};
+    
+    // 패턴 1: 일반 학생 (이전학적이 숫자로 된 경우)
+    // 예: 3 1 1 따뜻이 2011.07.23 여 634.17 2 5 28
+    const normalPattern = /(\d)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d{4}\.\d{2}\.\d{2})\s+(남|여)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+    
+    // 패턴 2: 전입생 (이전학적이 "전입"인 경우)
+    // 예: 2 1 29 하늘이 2012.02.10 여 984.01 전입
+    const transferPattern = /(\d)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d{4}\.\d{2}\.\d{2})\s+(남|여)\s+([\d.]+)\s+전입/g;
+    
+    let match;
+    
+    // 일반 학생 파싱
+    while ((match = normalPattern.exec(text)) !== null) {
+        const [
+            _,           // 전체 매치
+            grade,       // 학년
+            classNum,    // 반
+            number,      // 번호
+            name,        // 성명
+            birthDate,   // 생년월일
+            gender,      // 성별
+            score,       // 기준성적
+            prevGrade,   // 이전학년
+            prevClass,   // 이전반
+            prevNumber   // 이전번호
+        ] = match;
+        
+        const classKey = `${grade}-${classNum}`;
+        
+        if (!classes[classKey]) {
+            classes[classKey] = [];
+        }
+        
+        classes[classKey].push({
+            번호: number,
+            성명: name,
+            생년월일: birthDate,
+            성별: gender,
+            기준성적: score,
+            이전학적: `${prevGrade} ${prevClass} ${prevNumber}`,
+            이전학적학년: prevGrade,
+            이전학적반: prevClass,
+            이전학적번호: prevNumber
+        });
+    }
+    
+    // 전입생 파싱
+    while ((match = transferPattern.exec(text)) !== null) {
+        const [
+            _,           // 전체 매치
+            grade,       // 학년
+            classNum,    // 반
+            number,      // 번호
+            name,        // 성명
+            birthDate,   // 생년월일
+            gender,      // 성별
+            score        // 기준성적
+        ] = match;
+        
+        const classKey = `${grade}-${classNum}`;
+        
+        if (!classes[classKey]) {
+            classes[classKey] = [];
+        }
+        
+        classes[classKey].push({
+            번호: number,
+            성명: name,
+            생년월일: birthDate,
+            성별: gender,
+            기준성적: score,
+            이전학적: '전입',
+            이전학적학년: String(parseInt(grade) - 1),    // 현재 학년으로 설정
+            이전학적반: '0',        // 0으로 설정
+            이전학적번호: '0'       // 0으로 설정
         });
     }
     
@@ -839,14 +956,39 @@ function downloadPdf() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     
+    try {
+        if (!window.NUCLASS_FONT_BASE64) {
+            throw new Error("NUCLASS_FONT_BASE64가 없습니다. nuclass_font.js 로딩 순서를 확인하세요.");
+        }
+        const FONT_FILE = "NotoSansKR-Regular.ttf";
+        const FONT_NAME = "NotoSansKR";
+        
+        doc.addFileToVFS("NotoSansKR-Regular.ttf", window.NUCLASS_FONT_BASE64);
+        doc.addFont("NotoSansKR-Regular.ttf", "NotoSansKR", "normal");
+
+        doc.addFileToVFS("NotoSansKR-Bold.ttf", window.NUCLASS_FONT_BOLD_BASE64);
+        doc.addFont("NotoSansKR-Bold.ttf", "NotoSansKR", "bold");  
+        window.__NUCLASS_PDF_FONT_REGISTERED__ = true;
+
+        doc.setFont(FONT_NAME, "normal");
+    } catch (e) {
+        console.error(e);
+        alert("PDF 한글 폰트 로딩에 실패했습니다. nuclass_font.js가 정상 로딩되는지 확인하세요.");
+        return;
+    }
+    
     const now = new Date().toLocaleString('ko-KR');
     const year = new Date().getFullYear();
     
-    // 제목
+    // 페이지 가로 중앙값 계산
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const centerX = pageWidth / 2;
+    
+    // 대제목 - 가운데 정렬
     doc.setFontSize(14);
-    doc.text(`${currentSession.schoolName} ${currentSession.grade} NU:CLASS 반편성내역`, 14, 15);
+    doc.text(`${currentSession.schoolName} ${currentSession.grade} NU:CLASS 반편성내역`, centerX, 15, { align: 'center' });
     doc.setFontSize(10);
-    doc.text(`(${now})`, 14, 22);
+    doc.text(`(${now})`, centerX, 22, { align: 'center' });
     
     let yPos = 30;
     
@@ -865,9 +1007,11 @@ function downloadPdf() {
             yPos = 15;
         }
         
+        // 반 제목
         doc.setFontSize(12);
-        doc.text(`${year}학년도 ${currentSession.grade} ${classNum}반`, 14, yPos);
-        yPos += 5;
+        const nextGradeNum = parseInt(currentSession.grade.replace(/[^0-9]/g, '')) + 1;
+        doc.text(`${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, yPos);
+        yPos += 7;
         
         const tableData = students.map(s => [
             grade,
@@ -886,8 +1030,20 @@ function downloadPdf() {
             startY: yPos,
             head: [['학년', '반', '번호', '성명', '생년월일', '성별', '기준성적', '이전학년', '이전반', '이전번호']],
             body: tableData,
-            styles: { fontSize: 8, cellPadding: 2 },
-            headStyles: { fillColor: [76, 175, 80] }
+            styles: { 
+                fontSize: 8, 
+                cellPadding: 2, 
+                textColor: [0, 0, 0],  
+                font: 'NotoSansKR',
+                halign: 'center'       // 내용 가운데 정렬
+            },
+            headStyles: { 
+                fontSize: 8, 
+                fillColor: [76, 165, 80],
+                textColor: [255, 255, 255],  
+                halign: 'center',      // 헤더 가운데 정렬
+                fontStyle: 'bold'      // 헤더 굵게
+            }
         });
         
         yPos = doc.lastAutoTable.finalY + 10;
@@ -897,7 +1053,7 @@ function downloadPdf() {
     if (history.length > 0) {
         doc.addPage();
         doc.setFontSize(12);
-        doc.text('변경 이력', 14, 15);
+        doc.text('변경 이력', centerX, 15, { align: 'center' });
         
         let historyY = 25;
         doc.setFontSize(9);
@@ -913,7 +1069,6 @@ function downloadPdf() {
     
     doc.save(`${currentSession.schoolName}_${currentSession.grade}_반편성결과.pdf`);
 }
-
 /* ========================================
    엑셀 다운로드 (SheetJS)
    ======================================== */
