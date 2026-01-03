@@ -774,13 +774,13 @@ function renderStatistics() {
     let headerHTML = `
         <tr>
             <th>구분</th>
-            <th>합계</th>
+            <th>총원</th>
     `;
     for (let i = 1; i <= prevMax; i++) {
         headerHTML += `<th>이전 ${i}반</th>`;
     }
     headerHTML += `
-            <th>기준성적 평균</th>
+            <th>성적 평균</th>
             <th>최고점(이름)</th>
             <th>최저점(이름)</th>
         </tr>
@@ -1078,76 +1078,262 @@ function renderHistory() {
 /* ========================================
    PDF 다운로드 (jsPDF)
    ======================================== */
+
 function downloadPdf() {
     const validClasses = Object.keys(classData).filter(
         cls => cls !== 'history' && cls !== 'undefined'
     );
-    
+
     if (validClasses.length === 0) {
         alert('다운로드할 데이터가 없습니다.');
         return;
     }
-    
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    
+
     try {
         if (!window.NUCLASS_FONT_BASE64) {
             throw new Error("NUCLASS_FONT_BASE64가 없습니다. nuclass_font.js 로딩 순서를 확인하세요.");
         }
-        const FONT_FILE = "NotoSansKR-Regular.ttf";
         const FONT_NAME = "NotoSansKR";
-        
+
         doc.addFileToVFS("NotoSansKR-Regular.ttf", window.NUCLASS_FONT_BASE64);
         doc.addFont("NotoSansKR-Regular.ttf", "NotoSansKR", "normal");
 
         doc.addFileToVFS("NotoSansKR-Bold.ttf", window.NUCLASS_FONT_BOLD_BASE64);
-        doc.addFont("NotoSansKR-Bold.ttf", "NotoSansKR", "bold");  
-        window.__NUCLASS_PDF_FONT_REGISTERED__ = true;
+        doc.addFont("NotoSansKR-Bold.ttf", "NotoSansKR", "bold");
 
+        window.__NUCLASS_PDF_FONT_REGISTERED__ = true;
         doc.setFont(FONT_NAME, "normal");
     } catch (e) {
         console.error(e);
         alert("PDF 한글 폰트 로딩에 실패했습니다. nuclass_font.js가 정상 로딩되는지 확인하세요.");
         return;
     }
-    
+
     const now = new Date().toLocaleString('ko-KR');
     const year = new Date().getFullYear();
-    
-    // 페이지 가로 중앙값 계산
+
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const centerX = pageWidth / 2;
-    
-    // 대제목 - 가운데 정렬
-    doc.setFontSize(14);
-    doc.text(`${currentSession.schoolName} ${currentSession.grade} NU:CLASS 반편성내역`, centerX, 15, { align: 'center' });
-    doc.setFontSize(10);
-    doc.text(`(${now})`, centerX, 22, { align: 'center' });
-    
-    let yPos = 30;
-    
-    // 반별 테이블
-    validClasses.sort((a, b) => {
+
+    // -------------------------------
+    // 0) 공통 정렬/정의
+    // -------------------------------
+    const sortedClasses = [...validClasses].sort((a, b) => {
         const [gradeA, classA] = a.split('-').map(Number);
         const [gradeB, classB] = b.split('-').map(Number);
         if (gradeA !== gradeB) return gradeA - gradeB;
         return classA - classB;
-    }).forEach((cls, idx) => {
+    });
+
+    // -------------------------------
+    // 1) 첫 페이지: 제목
+    // -------------------------------
+    doc.setFontSize(14);
+    doc.text(
+        `${currentSession.schoolName} ${currentSession.grade} NU:CLASS 반편성내역`,
+        centerX,
+        15,
+        { align: 'center' }
+    );
+    doc.setFontSize(10);
+    doc.text(`(${now})`, centerX, 22, { align: 'center' });
+
+    let yPos = 30;
+
+    // -------------------------------
+    // 2) 첫 페이지: 현재 현황(통계) 테이블
+    //    - 화면의 renderStatistics() 로직을 PDF에서도 재계산
+    // -------------------------------
+    function buildStatsData() {
+        // prevMax 계산 (이전학적반 최대치)
+        let prevMax = 0;
+        sortedClasses.forEach(cls => {
+            const students = classData[cls] || [];
+            students.forEach(student => {
+                const v = parseInt(student.이전학적반, 10);
+                if (!isNaN(v)) prevMax = Math.max(prevMax, v);
+            });
+        });
+        prevMax = Math.max(prevMax, 1);
+
+        // 헤더 구성
+        const head = [['구분', '총원', ...Array.from({ length: prevMax }, (_, i) => `이전${i + 1}반`), '성적 평균', '최고점(이름)', '최저점(이름)']];
+
+        // 바디 구성
+        const body = [];
+        sortedClasses.forEach(cls => {
+            const students = classData[cls] || [];
+            let totalScore = 0;
+            let maxScore = -Infinity;
+            let minScore = Infinity;
+            let maxStudent = '';
+            let minStudent = '';
+
+            const previousClassCount = Array(prevMax).fill(0);
+
+            students.forEach(student => {
+                const score = parseFloat(student.기준성적) || 0;
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    maxStudent = student.성명;
+                }
+                if (score < minScore) {
+                    minScore = score;
+                    minStudent = student.성명;
+                }
+                totalScore += score;
+
+                const prevClass = parseInt(student.이전학적반, 10) - 1;
+                if (!isNaN(prevClass) && prevClass >= 0 && prevClass < prevMax) {
+                    previousClassCount[prevClass]++;
+                }
+            });
+
+            const avgScore = students.length ? (totalScore / students.length).toFixed(2) : '-';
+            const maxText = maxScore !== -Infinity ? `${maxScore} (${maxStudent})` : '-';
+            const minText = minScore !== Infinity ? `${minScore} (${minStudent})` : '-';
+
+            body.push([
+                cls,
+                String(students.length),
+                ...previousClassCount.map(String),
+                String(avgScore),
+                String(maxText),
+                String(minText)
+            ]);
+        });
+
+        return { head, body };
+    }
+
+    // 섹션 제목
+    doc.setFontSize(12);
+    doc.text('통계', 14, yPos);
+    yPos += 4;
+
+    const { head: statsHead, body: statsBody } = buildStatsData();
+
+
+    // ✅ 통계표 컬럼 폭 제어(최고/최저 넓히기)
+    const prevMax = statsHead[0].length - 5; 
+    // head 구조: [구분, 총원, 이전1..이전n, 성적 평균, 최고점(이름), 최저점(이름)]
+    // 전체길이 = 2 + prevMax + 3  => prevMax = 전체길이 - 5
+
+    const marginLeft = 6;
+    const marginRight = 5;
+    const availableWidth = pageWidth - marginLeft - marginRight;
+
+    // 컬럼 인덱스
+    const idxAvg = 2 + prevMax;
+    const idxMax = 3 + prevMax;
+    const idxMin = 4 + prevMax;
+
+    // 폭(mm) 배분: 최고/최저를 넓히고, 이전n반은 조금씩 줄임
+    const wCategory = 9; // 구분
+    const wTotal = 9;    // 총원
+    const wAvg = 17;      // 성적 평균
+    const wMax = 25;      // 최고점(이름)  ← 여기 넓게
+    const wMin = 25;      // 최저점(이름)  ← 여기 넓게
+
+    const fixed = wCategory + wTotal + wAvg + wMax + wMin;
+    const wPrev = Math.max(10, Math.floor((availableWidth - fixed) / prevMax));
+
+    const statsColumnStyles = {
+      0: { cellWidth: wCategory },
+      1: { cellWidth: wTotal },
+      [idxAvg]: { cellWidth: wAvg },
+      [idxMax]: { cellWidth: wMax },
+      [idxMin]: { cellWidth: wMin }
+    };
+
+    for (let i = 0; i < prevMax; i++) {
+      statsColumnStyles[2 + i] = { cellWidth: wPrev };
+    }
+
+
+    doc.autoTable({
+        startY: yPos,
+        head: statsHead,
+        body: statsBody,
+        margin: { left: marginLeft, right: marginRight },
+        styles: {
+            fontSize: 8,
+            cellPadding: 2,
+            textColor: [0, 0, 0],
+            font: 'NotoSansKR',
+            halign: 'center',
+            valign: 'middle'
+        },
+        headStyles: {
+            fontSize: 8,
+            fillColor: [76, 165, 80],
+            textColor: [255, 255, 255],
+            halign: 'center',
+            fontStyle: 'bold'
+        },
+        columnStyles: statsColumnStyles
+    });
+
+    yPos = doc.lastAutoTable.finalY + 8;
+
+    // -------------------------------
+    // 3) 첫 페이지: 변경 이력(통계 밑)
+    //    - 공간 부족 시, "요약 페이지"를 추가로 만들어 계속 출력
+    //    - 요약이 끝난 다음에 반별 페이지 시작
+    // -------------------------------
+    doc.setFontSize(12);
+    doc.text('변경 이력', 14, yPos);
+    yPos += 6;
+
+    doc.setFontSize(9);
+
+    const bottomMargin = 12;
+    const lineHeight = 6;
+
+    if (history.length === 0) {
+        doc.text('- 변경 이력이 없습니다.', 14, yPos);
+        yPos += lineHeight;
+    } else {
+        history.forEach(entry => {
+            // 다음 줄을 쓸 공간이 없으면 "요약 페이지" 추가
+            if (yPos + lineHeight > pageHeight - bottomMargin) {
+                doc.addPage();
+                yPos = 15;
+
+                // 요약 페이지에도 구분을 위해 제목을 한 번 더 표시(원치 않으면 삭제 가능)
+                doc.setFontSize(12);
+                doc.text('변경 이력(계속)', 14, yPos);
+                yPos += 6;
+                doc.setFontSize(9);
+            }
+
+            doc.text(`- ${entry}`, 14, yPos);
+            yPos += lineHeight;
+        });
+    }
+
+    // -------------------------------
+    // 4) 반별 테이블은 "요약 끝난 다음"부터 시작
+    // -------------------------------
+    sortedClasses.forEach((cls, idx) => {
         const [grade, classNum] = cls.split('-');
         const students = classData[cls];
-        
-        if (idx > 0) {
-            doc.addPage();
-            yPos = 15;
-        }
-        
+
+        // 첫 반 시작 전에 무조건 새 페이지 (요약이 PDF 맨 앞에 오도록)
+        doc.addPage();
+        let classY = 15;
+
         // 반 제목
         doc.setFontSize(12);
         const nextGradeNum = parseInt(currentSession.grade.replace(/[^0-9]/g, '')) + 1;
-        doc.text(`${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, yPos);
-        yPos += 7;
-        
+        doc.text(`${year}학년도 ${nextGradeNum}학년 ${classNum}반`, 14, classY);
+        classY += 7;
+
         const tableData = students.map(s => [
             grade,
             classNum,
@@ -1160,50 +1346,48 @@ function downloadPdf() {
             s.이전학적반 || '',
             s.이전학적번호 || ''
         ]);
-        
+
         doc.autoTable({
-            startY: yPos,
+            startY: classY,
             head: [['학년', '반', '번호', '성명', '생년월일', '성별', '기준성적', '이전학년', '이전반', '이전번호']],
             body: tableData,
-            styles: { 
-                fontSize: 8, 
-                cellPadding: 2, 
-                textColor: [0, 0, 0],  
+            styles: {
+                fontSize: 8,
+                cellPadding: 2,
+                textColor: [0, 0, 0],
                 font: 'NotoSansKR',
                 halign: 'center'
             },
-            headStyles: { 
-                fontSize: 8, 
+            headStyles: {
+                fontSize: 7,
                 fillColor: [76, 165, 80],
-                textColor: [255, 255, 255],  
+                textColor: [255, 255, 255],
                 halign: 'center',
                 fontStyle: 'bold'
             }
         });
-        
-        yPos = doc.lastAutoTable.finalY + 10;
     });
-    
-    // 변경 이력
-    if (history.length > 0) {
-        doc.addPage();
-        doc.setFontSize(12);
-        doc.text('변경 이력', centerX, 15, { align: 'center' });
-        
-        let historyY = 25;
-        doc.setFontSize(9);
-        history.forEach(entry => {
-            if (historyY > 280) {
-                doc.addPage();
-                historyY = 15;
-            }
-            doc.text(`- ${entry}`, 14, historyY);
-            historyY += 6;
-        });
-    }
-    
-    doc.save(`${currentSession.schoolName}_${currentSession.grade}_반편성결과.pdf`);
+
+    const nowDate = new Date();
+
+    const yy = String(nowDate.getFullYear()).slice(-2);
+    const mm = String(nowDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(nowDate.getDate()).padStart(2, '0');
+
+    const hh = String(nowDate.getHours()).padStart(2, '0');
+    const mi = String(nowDate.getMinutes()).padStart(2, '0');
+    const ss = String(nowDate.getSeconds()).padStart(2, '0');
+
+    const fileTimestamp = `${yy}${mm}${dd}_${hh}${mi}${ss}`;
+
+
+
+    doc.save(`${currentSession.schoolName}_${currentSession.grade}_반편성결과_${fileTimestamp}.pdf`);
 }
+
+
+
+
 
 /* ========================================
    엑셀 다운로드 (SheetJS)
