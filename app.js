@@ -837,6 +837,8 @@ function renderStatistics() {
         <tr>
             <th>구분</th>
             <th>인원</th>
+            <th>남</th>
+            <th>여</th>
     `;
     for (let i = 1; i <= prevMax; i++) {
         headerHTML += `<th>이전 ${i}반</th>`;
@@ -859,6 +861,8 @@ function renderStatistics() {
         let minScore = Infinity;
         let maxStudent = '';
         let minStudent = '';
+        let maleCount = 0;     
+        let femaleCount = 0; 
 
         // ✅ 이전반 카운트 배열도 prevMax 길이로
         const previousClassCount = Array(prevMax).fill(0);
@@ -876,6 +880,10 @@ function renderStatistics() {
             }
             totalScore += score;
 
+            // 성별 카운트
+            if (student.성별 === '남') maleCount++;
+            else if (student.성별 === '여') femaleCount++;
+
             // 이전반 통계 (✅ prevMax 범위로 카운트)
             const prevClass = parseInt(student.이전학적반, 10) - 1;
             if (!isNaN(prevClass) && prevClass >= 0 && prevClass < prevMax) {
@@ -885,6 +893,8 @@ function renderStatistics() {
 
         classStats[cls] = {
             studentCount: students.length,
+            maleCount,      
+            femaleCount,    
             avgScore: students.length ? (totalScore / students.length).toFixed(2) : '-',
             maxScore: maxScore !== -Infinity ? maxScore : '-',
             maxStudent,
@@ -912,6 +922,8 @@ function renderStatistics() {
         let rowHTML = `
             <td>${cls}</td>
             <td>${stats.studentCount}</td>
+            <td>${stats.maleCount}</td>     
+            <td>${stats.femaleCount}</td>   
         `;
 
         stats.previousClassCount.forEach(count => {
