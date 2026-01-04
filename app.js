@@ -2369,9 +2369,6 @@ function openRedFlagModal() {
     document.getElementById('teamLeaderTag').innerHTML = '';
     document.getElementById('teamMemberTags').innerHTML = '';
     
-    // 학생 자동완성 목록 업데이트
-    updateAllStudentsList();
-    
     // 그룹 목록 렌더링
     renderRedFlagGroups();
     
@@ -2406,61 +2403,16 @@ document.addEventListener('click', function(e) {
 // ESC 키로 모달 닫기
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+
+        // 동명이인 선택 팝업이 열려있으면 먼저 닫기
+        const selectionOverlay = document.getElementById('studentSelectionOverlay');
+        if (selectionOverlay) {
+            selectionOverlay.remove();
+            return;
+        }
         closeRedFlagModal();
     }
 });
-
-
-// 전체 학생 목록으로 자동완성 datalist 업데이트
-function updateAllStudentsList() {
-    const datalist = document.getElementById('allStudentsList');
-    datalist.innerHTML = '';
-    
-    // 모든 학생 수집
-    const allStudents = [];
-    const nameCount = {};  // 동명이인 체크용
-    
-    Object.keys(classData).forEach(cls => {
-        if (cls === 'history' || cls === 'undefined') return;
-        
-        const students = classData[cls] || [];
-        students.forEach(student => {
-            const name = student.성명;
-            
-            // 동명이인 카운트
-            if (!nameCount[name]) {
-                nameCount[name] = [];
-            }
-            nameCount[name].push({
-                name: name,
-                prevClass: student.이전학적반 || '',
-                gender: student.성별 || '',
-                class: cls
-            });
-            
-            allStudents.push({
-                name: name,
-                prevClass: student.이전학적반 || '',
-                gender: student.성별 || '',
-                class: cls
-            });
-        });
-    });
-    
-    // datalist 옵션 생성
-    allStudents.forEach(student => {
-        const option = document.createElement('option');
-        
-        // 동명이인인 경우 (이전반, 성별) 추가
-        if (nameCount[student.name].length > 1) {
-            option.value = `${student.name}(${student.prevClass}반, ${student.gender})`;
-        } else {
-            option.value = student.name;
-        }
-        
-        datalist.appendChild(option);
-    });
-}
 
 
 // 학생 입력 키 이벤트 (Enter로 태그 추가)
@@ -2500,7 +2452,7 @@ function handleStudentInputKeydown(e) {
         }
         
         // 단일 학생 - 바로 추가
-        selectedTagStudents.push(candidates[0].displayName);
+        selectedTagStudents.push(candidates[0].name);
         renderSelectedTags();
         
         input.value = '';
@@ -2644,11 +2596,11 @@ function showStudentSelectionUI(candidates, onSelect) {
             overlay.remove();
         }
     });
+
     
     overlay.appendChild(selectionBox);
     document.body.appendChild(overlay);
 }
-
 
 
 

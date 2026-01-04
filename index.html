@@ -57,7 +57,7 @@
                     그룹 방식 (서로 떨어지기)
                 </button>
                 <button id="teamTab" class="tab-btn" onclick="switchTab('team')">
-                    팀 방식 (1명 vs N명)
+                    팀 방식 (1:N)
                 </button>
             </div>
             
@@ -71,10 +71,8 @@
                     <!-- 학생 입력 -->
                     <div class="student-input-wrapper">
                         <input type="text" id="redFlagStudentInput" 
-                               list="allStudentsList" 
                                placeholder="학생 이름 입력 후 Enter"
                                autocomplete="off">
-                        <datalist id="allStudentsList"></datalist>
                     </div>
                     
                     <!-- 선택된 학생 태그 표시 -->
@@ -112,7 +110,6 @@
                     <label style="font-weight: bold; display: block; margin-bottom: 5px;">팀장 (1명)</label>
                     <div class="student-input-wrapper">
                         <input type="text" id="teamLeaderInput" 
-                               list="allStudentsList" 
                                placeholder="팀장 이름 입력"
                                autocomplete="off">
                     </div>
@@ -122,7 +119,6 @@
                     <label style="font-weight: bold; display: block; margin-bottom: 5px;">팀원들 (여러 명)</label>
                     <div class="student-input-wrapper">
                         <input type="text" id="teamMemberInput" 
-                               list="allStudentsList" 
                                placeholder="팀원 이름 입력 후 Enter"
                                autocomplete="off">
                     </div>
