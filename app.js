@@ -2365,6 +2365,15 @@ document.addEventListener('click', function(e) {
     }
 });
 
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeRedFlagModal();
+    }
+});
+
+
 // 전체 학생 목록으로 자동완성 datalist 업데이트
 function updateAllStudentsList() {
     const datalist = document.getElementById('allStudentsList');
