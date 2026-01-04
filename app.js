@@ -363,7 +363,7 @@ function showDashboardScreen() {
    세션 관리 (localStorage)
    ======================================== */
 function loadSession() {
-    const saved = localStorage.getItem('nuclass_session');
+    const saved = sessionStorage.getItem('nuclass_session');
     if (saved) {
         currentSession = JSON.parse(saved);
         if (currentSession.isLoggedIn) {
@@ -376,7 +376,7 @@ function loadSession() {
 }
 
 function saveSession() {
-    localStorage.setItem('nuclass_session', JSON.stringify(currentSession));
+    sessionStorage.setItem('nuclass_session', JSON.stringify(currentSession));
 }
 
 function clearSession() {
@@ -385,7 +385,7 @@ function clearSession() {
         grade: null,
         isLoggedIn: false
     };
-    localStorage.removeItem('nuclass_session');
+    sessionStorage.removeItem('nuclass_session');
 }
 
 /* ========================================
