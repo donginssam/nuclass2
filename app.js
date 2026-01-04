@@ -30,6 +30,61 @@ function scheduleSaveClassData() {
 
 
 /* ========================================
+   유틸리티 함수
+   ======================================== */
+
+/**
+ * 클래스 키에서 학년, 반 추출
+ * @param {string} classKey - "3-2" 형태의 클래스 키
+ * @returns {{grade: string, classNum: string}}
+ */
+function parseClassKey(classKey) {
+    const [grade, classNum] = classKey.split('-');
+    return { grade, classNum };
+}
+
+/**
+ * 유효한 클래스 목록 반환 (history, undefined 제외)
+ * @returns {string[]}
+ */
+function getValidClasses() {
+    return Object.keys(classData).filter(
+        cls => cls !== 'history' && cls !== 'undefined'
+    );
+}
+
+/**
+ * 클래스 목록을 학년-반 순으로 정렬
+ * @param {string[]} classes - 클래스 키 배열
+ * @returns {string[]}
+ */
+function sortClasses(classes) {
+    return [...classes].sort((a, b) => {
+        const parsedA = parseClassKey(a);
+        const parsedB = parseClassKey(b);
+        const gradeA = Number(parsedA.grade);
+        const gradeB = Number(parsedB.grade);
+        const classA = Number(parsedA.classNum);
+        const classB = Number(parsedB.classNum);
+        
+        if (gradeA !== gradeB) return gradeA - gradeB;
+        return classA - classB;
+    });
+}
+
+/**
+ * 유효한 클래스 목록을 정렬해서 반환 
+ * @returns {string[]}
+ */
+function getSortedValidClasses() {
+    return sortClasses(getValidClasses());
+}
+
+
+
+
+
+/* ========================================
    샘플 파일 다운로드 모달
    ======================================== */
 
@@ -743,9 +798,7 @@ function renderClasses() {
     const container = document.getElementById('classesContainer');
     container.innerHTML = '';
     
-    const validClasses = Object.keys(classData).filter(
-        cls => cls !== 'history' && cls !== 'undefined'
-    );
+    const validClasses = getValidClasses();
     
     // 데이터 유무에 따라 버튼 활성화/비활성화
     const hasData = validClasses.length > 0;
@@ -770,15 +823,10 @@ function renderClasses() {
     }
     
     // 반 정렬 (학년-반 순)
-    validClasses.sort((a, b) => {
-        const [gradeA, classA] = a.split('-').map(Number);
-        const [gradeB, classB] = b.split('-').map(Number);
-        if (gradeA !== gradeB) return gradeA - gradeB;
-        return classA - classB;
-    });
+    const sortedClasses = sortClasses(validClasses); 
     
-    validClasses.forEach(cls => {
-        const [grade, classNumber] = cls.split('-');
+    sortedClasses.forEach(cls => {
+        const { grade, classNum: classNumber } = parseClassKey(cls); 
         const students = classData[cls];
         
         const classBox = document.createElement('div');
@@ -2112,91 +2160,130 @@ function switchTab(tabName) {
 let selectedTeamLeader = '';
 let selectedTeamMembers = [];
 
+
+/**
+ * 학생 입력 공통 처리 함수
+ * @param {KeyboardEvent} e - 키보드 이벤트
+ * @param {Object} config - 설정 객체
+ */
+function handleStudentInput(e, config) {
+    if (e.key !== 'Enter') return;
+    
+    e.preventDefault();
+    
+    const input = document.getElementById(config.inputId);
+    const value = input.value.trim();
+    
+    if (!value) return;
+    
+    // 1) 추가 검증 (예: 리더와 같은 이름인지)
+    if (config.extraValidation) {
+        const errorMsg = config.extraValidation(value);
+        if (errorMsg) {
+            alert(errorMsg);
+            return;
+        }
+    }
+    
+    // 2) 중복 체크 (배열 타입일 때만)
+    if (config.duplicateCheck && config.storageType === 'array') {
+        const currentArray = config.getStorage();
+        if (currentArray.includes(value)) {
+            alert('이미 추가된 학생입니다.');
+            input.value = '';
+            return;
+        }
+    }
+    
+    // 3) 후보 찾기
+    const candidates = findStudentCandidates(value);
+    
+    if (candidates.length === 0) {
+        alert('학생 목록에 없는 이름입니다. 정확한 이름을 입력해주세요.');
+        return;
+    }
+    
+    // 4) 동명이인 처리
+    if (candidates.length > 1) {
+        showStudentSelectionUI(candidates, (selected) => {
+            // 배열 타입: 중복 체크 후 push
+            if (config.storageType === 'array') {
+                if (config.getStorage().includes(selected)) {
+                    alert('이미 추가된 학생입니다.');
+                    return;
+                }
+                config.setStorage(selected);
+            } else {
+                // 단일 값 타입: 그냥 저장
+                config.setStorage(selected);
+            }
+            config.renderFn();
+            input.value = '';
+            if (config.keepFocus) input.focus();
+        });
+        return;
+    }
+    
+    // 5) 단일 학생 처리
+    const displayName = candidates[0].name;
+    
+    if (config.storageType === 'array') {
+        // displayName vs candidates[0].displayName 구분 필요
+        const nameToStore = candidates.length === 1 ? candidates[0].name : displayName;
+        if (config.duplicateCheck && config.getStorage().includes(nameToStore)) {
+            alert('이미 추가된 학생입니다.');
+            input.value = '';
+            return;
+        }
+        config.setStorage(nameToStore);
+    } else {
+        config.setStorage(candidates[0].name);
+    }
+    
+    config.renderFn();
+    input.value = '';
+    if (config.keepFocus) input.focus();
+}
+
+
+
+
+
 // 지정 학생 입력 처리
 function handleTeamLeaderInput(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const input = document.getElementById('teamLeaderInput');
-        const value = input.value.trim();
-        
-        if (!value) return;
-        
-        // 동명이인 체크
-        const candidates = findStudentCandidates(value);
-        
-        if (candidates.length === 0) {
-            alert('학생 목록에 없는 이름입니다.');
-            return;
-        }
-        
-        if (candidates.length > 1) {
-            // 동명이인 - 선택 UI 표시
-            showStudentSelectionUI(candidates, (selected) => {
-                selectedTeamLeader = selected;
-                renderTeamLeaderTag();
-                input.value = '';
-            });
-            return;
-        }
-        
-        // 단일 학생
-        selectedTeamLeader = candidates[0].name;
-        renderTeamLeaderTag();
-        input.value = '';
-    }
+    handleStudentInput(e, {
+        inputId: 'teamLeaderInput',
+        storageType: 'single',
+        getStorage: () => selectedTeamLeader,
+        setStorage: (val) => { selectedTeamLeader = val; },
+        renderFn: renderTeamLeaderTag,
+        duplicateCheck: false,
+        extraValidation: null,
+        keepFocus: false
+    });
 }
 
 
 // 팀원 입력 처리
 function handleTeamMemberInput(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const input = document.getElementById('teamMemberInput');
-        const value = input.value.trim();
-        
-        if (!value) return;
-        
-        // 동명이인 체크
-        const candidates = findStudentCandidates(value);
-        
-        if (candidates.length === 0) {
-            alert('학생 목록에 없는 이름입니다.');
-            return;
-        }
-        
-        // 지정 학생과 중복 체크 (이름만 비교)
-        const inputBaseName = value;
-        const leaderBaseName = selectedTeamLeader.match(/^(.+?)(?:\(|$)/)?.[1];
-        if (inputBaseName === leaderBaseName) {
-            alert('지정 학생과 같은 학생은 분리 학생으로 추가할 수 없습니다.');
-            return;
-        }
-        
-        if (candidates.length > 1) {
-            // 동명이인 - 선택 UI 표시
-            showStudentSelectionUI(candidates, (selected) => {
-                if (selectedTeamMembers.includes(selected)) {
-                    alert('이미 추가된 학생입니다.');
-                    return;
-                }
-                selectedTeamMembers.push(selected);
-                renderTeamMemberTags();
-                input.value = '';
-            });
-            return;
-        }
-        
-        // 단일 학생
-        const displayName = candidates[0].name;
-        if (selectedTeamMembers.includes(displayName)) {
-            alert('이미 추가된 학생입니다.');
-            return;
-        }
-        
-        selectedTeamMembers.push(displayName);
-        renderTeamMemberTags();
-        input.value = '';
-    }
+    handleStudentInput(e, {
+        inputId: 'teamMemberInput',
+        storageType: 'array',
+        getStorage: () => selectedTeamMembers,
+        setStorage: (val) => selectedTeamMembers.push(val),
+        renderFn: renderTeamMemberTags,
+        duplicateCheck: true,
+        extraValidation: (value) => {
+            // 지정 학생과 중복 체크
+            const inputBaseName = value;
+            const leaderBaseName = selectedTeamLeader.match(/^(.+?)(?:\(|$)/)?.[1];
+            if (inputBaseName === leaderBaseName) {
+                return '지정 학생과 같은 학생은 분리 학생으로 추가할 수 없습니다.';
+            }
+            return null;  // 문제 없으면 null 반환
+        },
+        keepFocus: false
+    });
 }
 
 // 팀장 태그 렌더링
@@ -2417,47 +2504,16 @@ document.addEventListener('keydown', function(e) {
 
 // 학생 입력 키 이벤트 (Enter로 태그 추가)
 function handleStudentInputKeydown(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        
-        const input = document.getElementById('redFlagStudentInput');
-        const value = input.value.trim();
-        
-        if (!value) return;
-        
-        // 이미 추가된 학생인지 확인
-        if (selectedTagStudents.includes(value)) {
-            alert('이미 추가된 학생입니다.');
-            input.value = '';
-            return;
-        }
-        
-        // 동명이인 체크
-        const candidates = findStudentCandidates(value);
-        
-        if (candidates.length === 0) {
-            alert('학생 목록에 없는 이름입니다. 정확한 이름을 입력해주세요.');
-            return;
-        }
-        
-        if (candidates.length > 1) {
-            // 동명이인 - 선택 UI 표시
-            showStudentSelectionUI(candidates, (selected) => {
-                selectedTagStudents.push(selected);
-                renderSelectedTags();
-                input.value = '';
-                input.focus();
-            });
-            return;
-        }
-        
-        // 단일 학생 - 바로 추가
-        selectedTagStudents.push(candidates[0].name);
-        renderSelectedTags();
-        
-        input.value = '';
-        input.focus();
-    }
+    handleStudentInput(e, {
+        inputId: 'redFlagStudentInput',
+        storageType: 'array',
+        getStorage: () => selectedTagStudents,
+        setStorage: (val) => selectedTagStudents.push(val),
+        renderFn: renderSelectedTags,
+        duplicateCheck: true,
+        extraValidation: null,
+        keepFocus: true
+    });
 }
 
 
