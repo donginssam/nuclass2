@@ -2121,16 +2121,31 @@ function handleTeamLeaderInput(e) {
         
         if (!value) return;
         
-        if (!validateStudentName(value)) {
+        // 동명이인 체크
+        const candidates = findStudentCandidates(value);
+        
+        if (candidates.length === 0) {
             alert('학생 목록에 없는 이름입니다.');
             return;
         }
         
-        selectedTeamLeader = value;
+        if (candidates.length > 1) {
+            // 동명이인 - 선택 UI 표시
+            showStudentSelectionUI(candidates, (selected) => {
+                selectedTeamLeader = selected;
+                renderTeamLeaderTag();
+                input.value = '';
+            });
+            return;
+        }
+        
+        // 단일 학생
+        selectedTeamLeader = candidates[0].displayName;
         renderTeamLeaderTag();
         input.value = '';
     }
 }
+
 
 // 팀원 입력 처리
 function handleTeamMemberInput(e) {
@@ -2141,22 +2156,44 @@ function handleTeamMemberInput(e) {
         
         if (!value) return;
         
-        if (!validateStudentName(value)) {
+        // 동명이인 체크
+        const candidates = findStudentCandidates(value);
+        
+        if (candidates.length === 0) {
             alert('학생 목록에 없는 이름입니다.');
             return;
         }
         
-        if (value === selectedTeamLeader) {
+        // 팀장과 중복 체크 (이름만 비교)
+        const inputBaseName = value;
+        const leaderBaseName = selectedTeamLeader.match(/^(.+?)(?:\(|$)/)?.[1];
+        if (inputBaseName === leaderBaseName) {
             alert('팀장과 같은 학생은 팀원으로 추가할 수 없습니다.');
             return;
         }
         
-        if (selectedTeamMembers.includes(value)) {
+        if (candidates.length > 1) {
+            // 동명이인 - 선택 UI 표시
+            showStudentSelectionUI(candidates, (selected) => {
+                if (selectedTeamMembers.includes(selected)) {
+                    alert('이미 추가된 팀원입니다.');
+                    return;
+                }
+                selectedTeamMembers.push(selected);
+                renderTeamMemberTags();
+                input.value = '';
+            });
+            return;
+        }
+        
+        // 단일 학생
+        const displayName = candidates[0].displayName;
+        if (selectedTeamMembers.includes(displayName)) {
             alert('이미 추가된 팀원입니다.');
             return;
         }
         
-        selectedTeamMembers.push(value);
+        selectedTeamMembers.push(displayName);
         renderTeamMemberTags();
         input.value = '';
     }
@@ -2443,21 +2480,178 @@ function handleStudentInputKeydown(e) {
             return;
         }
         
-        // 유효한 학생인지 확인 (자동완성 목록에 있는지)
-        const isValid = validateStudentName(value);
-        if (!isValid) {
+        // 동명이인 체크
+        const candidates = findStudentCandidates(value);
+        
+        if (candidates.length === 0) {
             alert('학생 목록에 없는 이름입니다. 정확한 이름을 입력해주세요.');
             return;
         }
         
-        // 태그 추가
-        selectedTagStudents.push(value);
+        if (candidates.length > 1) {
+            // 동명이인 - 선택 UI 표시
+            showStudentSelectionUI(candidates, (selected) => {
+                selectedTagStudents.push(selected);
+                renderSelectedTags();
+                input.value = '';
+                input.focus();
+            });
+            return;
+        }
+        
+        // 단일 학생 - 바로 추가
+        selectedTagStudents.push(candidates[0].displayName);
         renderSelectedTags();
         
         input.value = '';
         input.focus();
     }
 }
+
+
+// 입력된 이름으로 학생 후보 찾기
+function findStudentCandidates(inputName) {
+    const candidates = [];
+    
+    Object.keys(classData).forEach(cls => {
+        if (cls === 'history' || cls === 'undefined') return;
+        
+        const students = classData[cls] || [];
+        students.forEach(student => {
+            // 정확히 일치하는 이름 찾기
+            if (student.성명 === inputName) {
+                const prevClass = student.이전학적반 || '';
+                const displayName = `${student.성명}(${prevClass}반, ${student.성별})`;
+                candidates.push({
+                    name: student.성명,
+                    prevClass: prevClass,
+                    gender: student.성별,
+                    currentClass: cls,
+                    displayName: displayName
+                });
+            }
+        });
+    });
+    
+    return candidates;
+}
+
+// 동명이인 선택 UI 표시
+function showStudentSelectionUI(candidates, onSelect) {
+    // 기존 선택 UI가 있으면 제거
+    const existing = document.getElementById('studentSelectionOverlay');
+    if (existing) existing.remove();
+    
+    // 오버레이 생성
+    const overlay = document.createElement('div');
+    overlay.id = 'studentSelectionOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+    `;
+    
+    // 선택 박스 생성
+    const selectionBox = document.createElement('div');
+    selectionBox.style.cssText = `
+        background: white;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        width: 90%;
+    `;
+    
+    selectionBox.innerHTML = `
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #333; font-size: 16px;">
+            동명이인입니다. 학생을 선택하세요.
+        </h3>
+        <div id="candidateList"></div>
+        <button id="cancelSelection" style="
+            width: 100%;
+            margin-top: 15px;
+            padding: 10px;
+            background: #757575;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        ">취소</button>
+    `;
+    
+    const candidateList = selectionBox.querySelector('#candidateList');
+    
+    // 후보 버튼 생성
+    candidates.forEach(candidate => {
+        const [, currentClassNum] = candidate.currentClass.split('-');
+        const button = document.createElement('button');
+        button.style.cssText = `
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+            transition: all 0.2s;
+        `;
+        
+        button.innerHTML = `
+            <div style="font-weight: bold; color: #333; margin-bottom: 4px;">
+                ${candidate.name} (${candidate.gender})
+            </div>
+            <div style="font-size: 12px; color: #666;">
+                이전: ${candidate.prevClass}반 → 현재: ${currentClassNum}반
+            </div>
+        `;
+        
+        button.addEventListener('mouseenter', () => {
+            button.style.background = '#e8f5e9';
+            button.style.borderColor = '#4CAF50';
+        });
+        
+        button.addEventListener('mouseleave', () => {
+            button.style.background = '#f9f9f9';
+            button.style.borderColor = '#ddd';
+        });
+        
+        button.addEventListener('click', () => {
+            overlay.remove();
+            onSelect(candidate.displayName);
+        });
+        
+        candidateList.appendChild(button);
+    });
+    
+    // 취소 버튼 이벤트
+    selectionBox.querySelector('#cancelSelection').addEventListener('click', () => {
+        overlay.remove();
+    });
+    
+    // 오버레이 클릭 시 닫기
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+    
+    overlay.appendChild(selectionBox);
+    document.body.appendChild(overlay);
+}
+
+
+
+
 
 // 학생 이름 유효성 검사
 function validateStudentName(inputValue) {
