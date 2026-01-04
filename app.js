@@ -31,14 +31,57 @@ function scheduleSaveClassData() {
    ======================================== */
 
 // 모달 열기
-function openSampleModal() {
+function openSampleModal(showApplyButton = false) {
     document.getElementById('sampleModal').style.display = 'flex';
+    
+    // "바로 적용" 버튼들 표시/숨김 처리
+    const applyButtons = document.querySelectorAll('.apply-btn');
+    applyButtons.forEach(btn => {
+        btn.style.display = showApplyButton ? 'inline-block' : 'none';
+    });
 }
 
 // 모달 닫기
 function closeSampleModal() {
     document.getElementById('sampleModal').style.display = 'none';
 }
+
+// 샘플 PDF 바로 적용
+async function applySamplePdf(filename) {
+    // 모달 닫기
+    closeSampleModal();
+    
+    // 로딩 표시
+    const container = document.getElementById('classesContainer');
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>샘플 PDF를 불러오는 중입니다...</p>
+        </div>
+    `;
+    
+    try {
+        // GitHub Pages에서 PDF 파일 가져오기
+        const response = await fetch(`./${filename}`);
+        
+        if (!response.ok) {
+            throw new Error('파일을 불러올 수 없습니다.');
+        }
+        
+        // Blob으로 변환 후 File 객체 생성
+        const blob = await response.blob();
+        const file = new File([blob], filename, { type: 'application/pdf' });
+        
+        // 기존 PDF 처리 함수 호출
+        await processPdfFile(file);
+        
+    } catch (error) {
+        console.error('샘플 PDF 적용 오류:', error);
+        alert('샘플 파일을 불러오는 중 오류가 발생했습니다.');
+        renderClasses();
+    }
+}
+
 
 // 모달 바깥 영역 클릭 시 닫기
 document.addEventListener('click', function(e) {

@@ -351,6 +351,49 @@ h2 {
 }
 
 
+.sample-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 15px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.sample-row:last-child {
+    margin-bottom: 0;
+}
+
+.sample-name {
+    flex: 1;
+    text-align: left;
+    font-weight: bold;
+    color: #333;
+    font-size: 14px;
+}
+
+/* 다운로드 버튼 */
+.modal-btn.download-btn {
+    padding: 10px 10px;
+    font-size: 13px;
+    min-width: 70px;
+}
+
+/* 바로 적용 버튼 */
+.modal-btn.apply-btn {
+    padding: 10px 10px;
+    font-size: 13px;
+    min-width: 70px;
+    background-color: #2196F3;
+    border: none;
+    cursor: pointer;
+}
+
+.modal-btn.apply-btn:hover {
+    background-color: #1976D2;
+}
+
 
 
 
