@@ -26,6 +26,38 @@ function scheduleSaveClassData() {
 
 
 
+/* ========================================
+   샘플 파일 다운로드 모달
+   ======================================== */
+
+// 모달 열기
+function openSampleModal() {
+    document.getElementById('sampleModal').style.display = 'flex';
+}
+
+// 모달 닫기
+function closeSampleModal() {
+    document.getElementById('sampleModal').style.display = 'none';
+}
+
+// 모달 바깥 영역 클릭 시 닫기
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('sampleModal');
+    if (e.target === modal) {
+        closeSampleModal();
+    }
+});
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeSampleModal();
+    }
+});
+
+
+
+
 // PDF.js 워커 설정
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 

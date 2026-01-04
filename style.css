@@ -250,6 +250,110 @@ h2 {
     font-weight: bold;
 }
 
+
+/* ========================================
+   샘플 파일 다운로드 모달
+   ======================================== */
+
+/* 모달 오버레이 (배경 어둡게) */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+/* 모달 박스 */
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.modal-content p {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+/* 모달 내 버튼 컨테이너 */
+.modal-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+/* 다운로드 버튼 */
+.modal-btn {
+    display: block;
+    padding: 14px 20px;
+    background-color: #4CAF50;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.modal-btn:hover {
+    background-color: #45a049;
+}
+
+/* 닫기 버튼 */
+.modal-close-btn {
+    padding: 10px 30px;
+    background-color: #757575;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.modal-close-btn:hover {
+    background-color: #616161;
+}
+
+/* 로그인 페이지 샘플 다운로드 버튼 */
+.sample-download-btn {
+    width: 100%;
+    padding: 12px 20px;
+    margin-top: 15px;
+    background-color: #757575;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.sample-download-btn:hover {
+    background-color: #616161;
+}
+
+
+
+
+
 /* ========================================
    통계 테이블 컨테이너
    ======================================== */
@@ -567,16 +671,24 @@ h2 {
 }
 
 /* ========================================
-   이전반 배경색 (이전학적 반 표시용)
+   이전반 배경색 (이전학적 반 표시용) - 최대 15반
    ======================================== */
-.prev-class-1 { background-color: #ffcccc; }
-.prev-class-2 { background-color: #ccffcc; }
-.prev-class-3 { background-color: #ccccff; }
-.prev-class-4 { background-color: #e0ccff; }
-.prev-class-5 { background-color: #ffedcc; }
-.prev-class-6 { background-color: #ccffff; }
-.prev-class-7 { background-color: #ffd9cc; }
-.prev-class-8 { background-color: #ffccf2; }
+.prev-class-1  { background-color: #ffcccc; }  /* 연한 빨강 */
+.prev-class-2  { background-color: #ccffcc; }  /* 연한 초록 */
+.prev-class-3  { background-color: #ccccff; }  /* 연한 파랑 */
+.prev-class-4  { background-color: #e0ccff; }  /* 연한 보라 */
+.prev-class-5  { background-color: #ffedcc; }  /* 연한 주황 */
+.prev-class-6  { background-color: #ccffff; }  /* 연한 청록 */
+.prev-class-7  { background-color: #ffd9cc; }  /* 연한 살구 */
+.prev-class-8  { background-color: #ffccf2; }  /* 연한 분홍 */
+.prev-class-9  { background-color: #d4e6a5; }  /* 연한 연두 */
+.prev-class-10 { background-color: #f5d6ba; }  /* 연한 베이지 */
+.prev-class-11 { background-color: #c9e4f6; }  /* 연한 하늘 */
+.prev-class-12 { background-color: #f0c6e8; }  /* 연한 자주 */
+.prev-class-13 { background-color: #d6f5d6; }  /* 연한 민트 */
+.prev-class-14 { background-color: #ffe6cc; }  /* 연한 살몬 */
+.prev-class-15 { background-color: #e6ccff; }  /* 연한 라벤더 */
+
 
 /* ========================================
    변경 이력
